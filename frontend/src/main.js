@@ -6,7 +6,7 @@ import {
   WindowMinimise, WindowToggleMaximise, HideWindow, ConfirmQuit,
   GetAppInfo,
 } from '../wailsjs/go/main/App';
-import { EventsOn } from '../wailsjs/runtime/runtime';
+import { EventsOn, BrowserOpenURL } from '../wailsjs/runtime/runtime';
 
 const PROFILE_COLORS = ['#ff6961', '#5ac8fa', '#ffd60a', '#bf5af2', '#30d158', '#ff9f0a'];
 
@@ -241,7 +241,6 @@ function fillForm(p) {
   $('#f-password').type = state.showPassword ? 'text' : 'password';
   $('#togglePassword').textContent = state.showPassword ? 'Скрыть' : 'Показать';
   $('#f-realm').value = p.realm;
-  $('#f-otpEnabled').classList.toggle('on', p.otpEnabled);
   $('#f-caFile').value = p.caFile;
   $('#f-userCert').value = p.userCert;
   $('#f-userKey').value = p.userKey;
@@ -321,7 +320,7 @@ $('#f-password').addEventListener('input', e => {
   state.passwords[sp.id] = e.target.value;
   schedulePasswordSave(sp.id, e.target.value);
 });
-['otpEnabled','insecureSsl','setDns','pppdUsePeerdns','setRoutes','halfInternetRoutes'].forEach(key => {
+['insecureSsl','setDns','pppdUsePeerdns','setRoutes','halfInternetRoutes'].forEach(key => {
   const sw = document.getElementById('f-' + key);
   if (sw) sw.onclick = () => { const sp = selected(); if (!sp) return; sp[key] = !sp[key]; scheduleSave(sp); render(); };
 });
@@ -331,11 +330,15 @@ function showAbout() {
   if (state.appInfo) {
     $('#aboutVersion').textContent = `Версия ${state.appInfo.version}`;
     $('#aboutAuthor').textContent = `Автор: ${state.appInfo.author}`;
+    $('#aboutGithub').textContent = state.appInfo.githubUrl;
   }
   $('#aboutOverlay').hidden = false;
 }
 $('#aboutTrigger').onclick = showAbout;
 $('#aboutCloseBtn').onclick = () => { $('#aboutOverlay').hidden = true; };
+$('#aboutGithub').onclick = () => {
+  if (state.appInfo && state.appInfo.githubUrl) BrowserOpenURL(state.appInfo.githubUrl);
+};
 
 // ---- quit confirmation ----
 $('#quitCancelBtn').onclick = () => { $('#quitOverlay').hidden = true; };

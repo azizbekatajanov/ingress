@@ -18,8 +18,6 @@ type Profile struct {
 	Username string `json:"username"`
 	Realm    string `json:"realm"`
 
-	OtpEnabled bool `json:"otpEnabled"`
-
 	CaFile              string `json:"caFile"`
 	UserCert            string `json:"userCert"`
 	UserKey             string `json:"userKey"`

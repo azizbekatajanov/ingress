@@ -6,9 +6,12 @@ import (
 
 	"github.com/energye/systray"
 	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/menu"
+	"github.com/wailsapp/wails/v2/pkg/menu/keys"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed all:frontend/dist
@@ -36,6 +39,34 @@ func main() {
 	trayStart, trayEnd := systray.RunWithExternalLoop(tray.onReady, tray.onExit)
 	trayStart()
 	defer trayEnd()
+
+	// Custom native app menu (top-left, next to the Apple logo) instead of
+	// Wails' default menu.AppMenu() role: that role's "About" item is a
+	// generic native NSAlert (see WailsMenu.m's -About), which looks jarring
+	// stapled onto an otherwise fully custom-drawn UI — this "About Ingress"
+	// item instead opens the same styled in-app modal as the tray's "О
+	// программе" item and the sidebar's "Ingress" link. The tradeoff: the
+	// AppMenu role's native "Hide Others"/"Show All" items (they invoke
+	// NSApplication selectors no Wails API exposes) are dropped rather than
+	// reimplemented — Hide/Quit cover the cases that matter here.
+	ingressMenu := menu.NewMenu()
+	ingressMenu.AddText("About Ingress", nil, func(_ *menu.CallbackData) {
+		wailsRuntime.WindowShow(app.ctx)
+		wailsRuntime.WindowUnminimise(app.ctx)
+		wailsRuntime.EventsEmit(app.ctx, "about:show")
+	})
+	ingressMenu.AddSeparator()
+	ingressMenu.AddText("Hide Ingress", keys.CmdOrCtrl("h"), func(_ *menu.CallbackData) {
+		app.HideWindow()
+	})
+	ingressMenu.AddSeparator()
+	ingressMenu.AddText("Quit Ingress", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
+		wailsRuntime.Quit(app.ctx)
+	})
+	appMenu := menu.NewMenuFromItems(
+		menu.SubMenu("Ingress", ingressMenu),
+		menu.EditMenu(),
+	)
 
 	// Frameless, opaque window: the traffic-light dots and sidebar chrome are
 	// drawn by the frontend CSS/JS (see frontend/src/style.css .window), not
@@ -69,6 +100,7 @@ func main() {
 		Bind: []interface{}{
 			app,
 		},
+		Menu: appMenu,
 		Mac: &mac.Options{
 			TitleBar: mac.TitleBarHidden(),
 		},
