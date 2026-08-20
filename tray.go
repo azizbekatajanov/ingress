@@ -26,6 +26,7 @@ var trayIconConnected []byte
 type Tray struct {
 	app    *App
 	mu     sync.Mutex
+	ready  bool
 	header *systray.MenuItem
 	items  map[string]*systray.MenuItem
 }
@@ -38,13 +39,14 @@ func (t *Tray) onReady() {
 	systray.SetIcon(trayIconPlain)
 	systray.SetTooltip("Ingress")
 
-	t.header = systray.AddMenuItem("Ingress", "")
+	t.header = systray.AddMenuItem("Не подключено", "")
 	t.header.Disable()
 	systray.AddSeparator()
 
 	// app.store/app.manager aren't ready yet at this point — RunWithExternalLoop's
 	// start() runs before wails.Run() calls App.startup. Profile rows get
-	// populated by the explicit OnProfilesChanged() call at the end of startup.
+	// populated below once t.ready flips true, or by App.startup's own
+	// OnProfilesChanged() call — whichever of the two finishes last.
 
 	systray.AddSeparator()
 	openItem := systray.AddMenuItem("Открыть Ingress", "")
@@ -63,6 +65,30 @@ func (t *Tray) onReady() {
 	quitItem.Click(func() {
 		wailsRuntime.Quit(t.app.ctx)
 	})
+
+	// energye/systray never attaches the NSMenu to the status item's button
+	// on its own on macOS (see systray_darwin.m's add_or_update_menu_item —
+	// its create_menu() call is commented out) — without this, the icon
+	// looks clickable but nothing happens, confirmed live via Accessibility
+	// inspection (the status item reported zero attached menus). Safe to call
+	// once here even though profile rows are still appended later by
+	// OnProfilesChanged: those calls add items to the same underlying NSMenu
+	// object, which stays attached.
+	systray.CreateMenu()
+
+	t.mu.Lock()
+	t.ready = true
+	t.mu.Unlock()
+	// Covers the ordering where App.startup's own OnProfilesChanged() call
+	// (App.startup, near the end) already ran and bailed out because onReady
+	// hadn't set t.header yet — confirmed live via a debug print, this isn't
+	// hypothetical: on a real launch, RunWithExternalLoop's start() (called
+	// synchronously in main(), before wails.Run()) does NOT guarantee this
+	// callback has finished by the time wails.Run()'s OnStartup goroutine
+	// gets to calling it. Without this second call, profile rows would
+	// silently never appear — there's no later trigger for a fresh launch
+	// where the profile list never actually changes.
+	t.OnProfilesChanged()
 }
 
 func (t *Tray) onExit() {}
@@ -104,8 +130,11 @@ func (t *Tray) refreshItemTitleLocked(profileID string) {
 // OnProfilesChanged is called by App after AddProfile/RemoveProfile/UpdateProfile,
 // and once at startup once app.store exists.
 func (t *Tray) OnProfilesChanged() {
-	if t.header == nil || t.app.store == nil {
-		return // tray not ready yet, or called before onReady fired
+	t.mu.Lock()
+	ready := t.ready
+	t.mu.Unlock()
+	if !ready || t.app.store == nil {
+		return // tray not ready yet, or called before App.startup set up the store
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -133,7 +162,10 @@ func (t *Tray) OnProfilesChanged() {
 // OnConnectionUpdate is wired into Manager as its update hook, called on every
 // connect/disconnect/log state change for any profile.
 func (t *Tray) OnConnectionUpdate(snap ConnectionSnapshot) {
-	if t.header == nil || t.app.store == nil || t.app.manager == nil {
+	t.mu.Lock()
+	ready := t.ready
+	t.mu.Unlock()
+	if !ready || t.app.store == nil || t.app.manager == nil {
 		return
 	}
 	t.mu.Lock()
