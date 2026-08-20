@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2AA0FF"/>
+      <stop offset="55%" stop-color="#0A7CFF"/>
+      <stop offset="100%" stop-color="#0058D6"/>
+    </linearGradient>
+    <linearGradient id="glossy" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="45%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="softshadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#003580" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1024" height="1024" rx="228" fill="url(#glossy)"/>
+
+  <g transform="translate(512,512)" filter="url(#softshadow)">
+    <!-- concave arrowhead flowing into a gate bar: the "ingress" mark -->
+    <path d="M 176 0 L -142 -176 L -36 0 L -142 176 Z" fill="#FFFFFF"/>
+    <rect x="150" y="-176" width="86" height="352" rx="22" fill="#FFFFFF"/>
+  </g>
+</svg>

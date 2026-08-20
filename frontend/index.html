@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ingress</title>
+<link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+<div class="desktop">
+  <div class="window">
+    <div class="sidebar">
+      <div class="traffic-lights">
+        <span class="dot red" id="dotClose" title="Скрыть в трей"></span>
+        <span class="dot yellow" id="dotMinimise" title="Свернуть"></span>
+        <span class="dot green" id="dotMaximise" title="Развернуть"></span>
+      </div>
+      <div class="sidebar-heading">Профили</div>
+      <div class="profile-list" id="profileList"></div>
+      <div class="sidebar-add" id="addProfile">
+        <span class="add-icon">+</span> Добавить профиль
+      </div>
+      <div class="sidebar-footer">
+        <span class="link" id="aboutTrigger" title="О программе">Ingress</span>
+        <div class="switch" id="themeToggle"><div class="knob"></div></div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="topbar">
+        <div class="topbar-title">
+          <select id="profileSelect"></select>
+          <div class="topbar-sub" id="hostLine"></div>
+        </div>
+        <div class="pill" id="statusPill">Не подключено</div>
+        <div class="btn primary" id="connectBtn">Подключить</div>
+        <div class="icon-btn" id="gearBtn" title="Настройки профиля">⚙</div>
+      </div>
+
+      <div class="tabs" id="tabsRow" hidden>
+        <div class="tab back" id="backToOverview" hidden>‹ Обзор</div>
+        <div class="tab" data-tab="general">Основное</div>
+        <div class="tab" data-tab="certificate">Сертификаты</div>
+        <div class="tab" data-tab="advanced">Дополнительно</div>
+        <div class="tab" data-tab="status">Статус</div>
+        <div class="tab" data-tab="log">Журнал</div>
+      </div>
+
+      <div class="content" id="content">
+
+        <div class="overview" id="viewOverview">
+          <div id="installBanner"></div>
+          <div id="errorBanner"></div>
+          <div class="avatar-lg" id="overviewAvatar"></div>
+          <div class="overview-name" id="overviewName"></div>
+          <div class="overview-host" id="overviewHost"></div>
+          <div class="link" id="openSettingsLink">Настройки профиля →</div>
+        </div>
+
+        <div class="connecting-overlay" id="viewConnecting" hidden>
+          <div class="connecting-card">
+            <div class="spinner"></div>
+            <div class="connecting-title" id="connectingTitle">Подключение…</div>
+            <div class="connecting-sub">Установка TLS-туннеля и аутентификация</div>
+            <div class="btn neutral" id="cancelConnectBtn">Отмена</div>
+          </div>
+        </div>
+
+        <div class="form" id="viewGeneral" hidden>
+          <div class="field">
+            <label>Название профиля</label>
+            <input type="text" id="f-name">
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Адрес сервера (host)</label>
+              <input type="text" id="f-host" placeholder="vpn.example.com">
+            </div>
+            <div class="field small">
+              <label>Порт</label>
+              <input type="text" id="f-port" placeholder="8443">
+            </div>
+          </div>
+          <div class="field">
+            <label>Имя пользователя (username)</label>
+            <input type="text" id="f-username">
+          </div>
+          <div class="field">
+            <label>Пароль</label>
+            <div class="password-wrap">
+              <input type="password" id="f-password">
+              <span class="link inline" id="togglePassword">Показать</span>
+            </div>
+          </div>
+          <div class="field">
+            <label>Realm</label>
+            <input type="text" id="f-realm" placeholder="необязательно">
+          </div>
+          <div class="toggle-row bordered-top">
+            <div>
+              <div class="toggle-title">Двухфакторная аутентификация</div>
+              <div class="toggle-desc">Запрашивать одноразовый код при подключении</div>
+            </div>
+            <div class="switch" id="f-otpEnabled"><div class="knob"></div></div>
+          </div>
+        </div>
+
+        <div class="form" id="viewCertificate" hidden>
+          <div class="field">
+            <label>CA-сертификат (ca-file)</label>
+            <div class="browse-wrap">
+              <input type="text" id="f-caFile" placeholder="/etc/openfortivpn/ca-bundle.pem">
+              <div class="btn neutral" data-browse="caFile">Обзор…</div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Клиентский сертификат (user-cert)</label>
+            <div class="browse-wrap">
+              <input type="text" id="f-userCert" placeholder="/home/user/.certs/client.pem">
+              <div class="btn neutral" data-browse="userCert">Обзор…</div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Ключ клиента (user-key)</label>
+            <div class="browse-wrap">
+              <input type="text" id="f-userKey" placeholder="/home/user/.certs/client.key">
+              <div class="btn neutral" data-browse="userKey">Обзор…</div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Доверенный сертификат, SHA-256 (trusted-cert)</label>
+            <input type="text" class="mono" id="f-trustedCert" placeholder="e46d4aff08ba6914e64daa85bc6112a4…">
+          </div>
+          <div class="toggle-row bordered-top">
+            <div>
+              <div class="toggle-title">Не проверять сертификат сервера</div>
+              <div class="toggle-desc danger">insecure-ssl — только для тестовых сред</div>
+            </div>
+            <div class="switch danger" id="f-insecureSsl"><div class="knob"></div></div>
+          </div>
+        </div>
+
+        <div class="form" id="viewAdvanced" hidden>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-title">Настраивать DNS через туннель</div>
+              <div class="toggle-desc">set-dns</div>
+            </div>
+            <div class="switch" id="f-setDns"><div class="knob"></div></div>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-title">Использовать peer DNS в pppd</div>
+              <div class="toggle-desc">pppd-use-peerdns</div>
+            </div>
+            <div class="switch" id="f-pppdUsePeerdns"><div class="knob"></div></div>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-title">Настраивать маршруты</div>
+              <div class="toggle-desc">set-routes</div>
+            </div>
+            <div class="switch" id="f-setRoutes"><div class="knob"></div></div>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-title">Два маршрута /1 вместо замены default route</div>
+              <div class="toggle-desc">half-internet-routes</div>
+            </div>
+            <div class="switch" id="f-halfInternetRoutes"><div class="knob"></div></div>
+          </div>
+          <div class="field bordered-top">
+            <label>Файл лога pppd (pppd-log)</label>
+            <input type="text" id="f-pppdLog" placeholder="/var/log/pppd.log (необязательно)">
+          </div>
+        </div>
+
+        <div class="status-view" id="viewStatus" hidden>
+          <div class="status-check">✓</div>
+          <div class="status-title">Подключено</div>
+          <div class="status-duration" id="statusDuration">00:00:00</div>
+          <div class="status-grid">
+            <div class="stat-card"><div class="stat-label">IP-адрес</div><div class="stat-value" id="statusIp"></div></div>
+            <div class="stat-card"><div class="stat-label">Шлюз</div><div class="stat-value" id="statusGateway"></div></div>
+            <div class="stat-card"><div class="stat-label">Отправлено</div><div class="stat-value" id="statusTx"></div></div>
+            <div class="stat-card"><div class="stat-label">Получено</div><div class="stat-value" id="statusRx"></div></div>
+          </div>
+          <div class="btn danger" id="disconnectBtn">Отключить</div>
+        </div>
+
+        <div class="log-view" id="viewLog" hidden>
+          <div class="log-header">
+            <div>Вывод openfortivpn / pppd</div>
+            <div class="link" id="clearLogBtn">Очистить</div>
+          </div>
+          <div class="log-panel" id="logPanel"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="otp-overlay" id="otpOverlay" hidden>
+      <div class="otp-modal">
+        <div class="otp-icon">2FA</div>
+        <div class="otp-title">Требуется код подтверждения</div>
+        <div class="otp-sub" id="otpTarget"></div>
+        <input type="text" class="otp-input" id="otpCode" placeholder="000000" maxlength="8" autocomplete="one-time-code" inputmode="numeric">
+        <div class="otp-progress"><div class="otp-progress-fill" id="otpProgressFill"></div></div>
+        <div class="otp-timer" id="otpTimer">Код действителен ещё 60 с</div>
+        <div class="otp-actions">
+          <div class="btn neutral" id="otpCancelBtn">Отмена</div>
+          <div class="btn primary" id="otpSubmitBtn">Подтвердить</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="otp-overlay" id="aboutOverlay" hidden>
+      <div class="otp-modal">
+        <img class="about-icon" src="./src/assets/app-icon.png" alt="Ingress">
+        <div class="otp-title">Ingress</div>
+        <div class="otp-sub" id="aboutVersion"></div>
+        <div class="about-desc">Менеджер нескольких одновременных VPN-туннелей openfortivpn — с параллельными профилями, чего не умеет официальный FortiClient.</div>
+        <div class="otp-sub" id="aboutAuthor"></div>
+        <div class="otp-actions">
+          <div class="btn primary" id="aboutCloseBtn">Закрыть</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="otp-overlay" id="quitOverlay" hidden>
+      <div class="otp-modal">
+        <div class="otp-title">Выйти из Ingress?</div>
+        <div class="otp-sub">Активные VPN-подключения будут отключены.</div>
+        <label class="quit-remember">
+          <input type="checkbox" id="quitRemember"> Не спрашивать больше
+        </label>
+        <div class="otp-actions">
+          <div class="btn neutral" id="quitCancelBtn">Отмена</div>
+          <div class="btn danger" id="quitConfirmBtn">Выйти</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="./src/main.js" type="module"></script>
+</body>
+</html>
