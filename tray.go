@@ -146,7 +146,18 @@ func (t *Tray) OnProfilesChanged() {
 		if !ok {
 			id := p.ID
 			item = systray.AddMenuItem(p.Name, "")
-			item.Click(func() { t.toggle(id) })
+			// Must not call t.toggle synchronously here: a native NSMenuItem
+			// click runs on the main thread, inside NSMenu's own nested
+			// tracking run loop — and t.toggle can reach Manager.Connect,
+			// which blocks on AuthorizationExecuteWithPrivileges (a raw
+			// Security.framework cgo call that pops a native auth dialog).
+			// Driving that modal prompt from inside another native run
+			// loop segfaulted AppKit, confirmed live via a crash log
+			// (SIGSEGV inside RunMainLoop right after a tray row's
+			// "Подключение к ..." log line). The in-window Connect button
+			// doesn't have this problem because it arrives via Wails' own
+			// bindings goroutine, never the raw main thread.
+			item.Click(func() { go t.toggle(id) })
 			t.items[id] = item
 		}
 		item.Show()
