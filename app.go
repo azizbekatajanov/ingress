@@ -163,12 +163,17 @@ func (a *App) WindowToggleMaximise() {
 // the process. Only the tray's "Выход" item or Cmd+Q (native app menu, wired
 // by Wails regardless of this custom frameless chrome) actually quits.
 //
-// Uses Minimise rather than Hide: on macOS, WindowHide maps to "hide the
-// whole application" (like Cmd+H) rather than just this window, and didn't
-// reliably come back via WindowShow from the tray. Minimise/Unminimise is
-// the better-documented, more predictable pair for this pattern.
+// Uses WindowHide, not WindowMinimise: Minimise leaves a genie-effect
+// thumbnail parked in the Dock, which reads as "still an open window" and
+// is exactly what a menu-bar-only utility (LSUIElement, see
+// build/darwin/Info.plist — no Dock icon of its own at all) shouldn't do.
+// WindowHide is the real per-window macOS primitive ([mainWindow
+// orderOut:nil] on the Wails side) — the window fully disappears with no
+// Dock trace, same as any other tray app, and WindowShow
+// (makeKeyAndOrderFront + activate, wired to the tray's "Открыть Ingress")
+// reliably brings it back.
 func (a *App) HideWindow() {
-	wailsRuntime.WindowMinimise(a.ctx)
+	wailsRuntime.WindowHide(a.ctx)
 }
 
 // --- Quit confirmation ---

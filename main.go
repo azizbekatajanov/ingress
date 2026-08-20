@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"os"
 
@@ -95,7 +96,11 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		OnStartup:     app.startup,
+		OnStartup: app.startup,
+		// See dockicon_darwin.go: must run after Wails' own launch sequence
+		// has forced NSApplicationActivationPolicyRegular, which OnStartup
+		// (fired from a goroutine racing that sequence) can't guarantee.
+		OnDomReady:    func(ctx context.Context) { hideDockIcon() },
 		OnBeforeClose: app.beforeClose,
 		Bind: []interface{}{
 			app,

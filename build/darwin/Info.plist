@@ -23,6 +23,12 @@
         <string>true</string>
         <key>NSHumanReadableCopyright</key>
         <string>{{.Info.Copyright}}</string>
+        <!-- No Dock icon / Cmd+Tab entry — this is a menu-bar-only utility
+        (see tray.go), controlled entirely through its status item; the
+        window is just a panel that item can show/hide, not the app's
+        primary presence. -->
+        <key>LSUIElement</key>
+        <true/>
         {{if .Info.FileAssociations}}
         <key>CFBundleDocumentTypes</key>
         <array>
