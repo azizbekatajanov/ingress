@@ -15,6 +15,22 @@ Built with [Wails](https://wails.io) (Go backend, vanilla JS/HTML/CSS frontend).
 - **Passwords never touch disk** — stored in the OS keychain (Keychain/Credential Manager/Secret Service), not in the profile config file.
 - Light/dark theme, and a warning banner if a known-broken openfortivpn version is detected (e.g. 1.21+ on macOS Sonoma, see [adrienverge/openfortivpn#1165](https://github.com/adrienverge/openfortivpn/issues/1165)), with a one-click Homebrew install/reinstall.
 
+## Installation
+
+Download the latest build for your platform from the [Releases page](https://github.com/azizbekatajanov/ingress/releases).
+
+**macOS:** open the `.dmg` and drag Ingress into Applications. The build isn't notarized (no Apple Developer ID behind this project — it's a personal tool, not worth the $99/year), so **Gatekeeper will refuse to open it on first launch** ("Ingress" Not Opened — Apple could not verify "Ingress" is free of malware...). This is expected, not a broken build. To open it anyway:
+
+```bash
+xattr -cr /Applications/Ingress.app
+```
+
+or in Finder: right-click Ingress.app → **Open** (not a double-click) → confirm in the dialog that appears. Either only needs doing once, right after installing.
+
+**Windows:** run the `-installer.exe`. Elevation with live log streaming isn't implemented yet (see the platform table below) — the UI works, but `Connect` returns an error.
+
+**Linux:** extract the `.tar.gz` and run the `ingress` binary. Elevation is via `pkexec`.
+
 ## Platform support
 
 | OS      | Status                                                                 |
