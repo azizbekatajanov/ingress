@@ -29,6 +29,12 @@ func main() {
 		return
 	}
 
+	// See path_darwin.go: a GUI launch (Finder/Dock/`open`) doesn't inherit
+	// the shell's PATH, so openfortivpn/brew are invisible to exec.LookPath
+	// without this — even though the pty-exec re-exec above already has an
+	// absolute path baked into its argv and doesn't need it.
+	augmentPATH()
+
 	app := NewApp()
 
 	// RunWithExternalLoop (energye/systray) hands us start/end functions instead
