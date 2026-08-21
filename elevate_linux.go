@@ -3,9 +3,10 @@
 package main
 
 import (
+	"fmt"
 	"io"
+	"os"
 	"os/exec"
-	"syscall"
 )
 
 // unixElevatedProc wraps an *exec.Cmd behind the elevatedProc interface,
@@ -29,21 +30,42 @@ func (p *unixElevatedProc) Wait() error {
 	return err
 }
 
-// Terminate sends SIGTERM, which pkexec forwards to openfortivpn, letting it
-// tear down the tunnel/routes cleanly before exiting.
+// Terminate writes terminateSentinel (see elevatedwrapper_linux.go) instead
+// of signaling p.cmd.Process directly. That process is `pkexec`, and pkexec
+// does not forward signals to the process it elevates — a documented,
+// by-design polkit limitation. Sending SIGTERM there used to hit only
+// pkexec itself, never openfortivpn running underneath it: confirmed live,
+// every Disconnect click just re-logged "Завершение туннеля..." forever,
+// since pump() never saw EOF. Writing the sentinel through the same stdin
+// pipe that's already forwarding OTP input reaches elevatedwrapper_linux.go's
+// runPtyExec instead, which — running at the same privilege level as the
+// openfortivpn it directly spawned — can actually signal it.
 func (p *unixElevatedProc) Terminate() error {
-	if p.cmd.Process == nil {
-		return nil
-	}
-	return p.cmd.Process.Signal(syscall.SIGTERM)
+	_, err := p.stdin.Write([]byte{terminateSentinel})
+	return err
 }
 
 // elevatedCommand runs `name args...` as root via pkexec, which shows the
 // desktop's native polkit auth dialog and — unlike macOS's AppleScript
 // "do shell script" equivalent — keeps stdin/stdout/stderr connected to the
 // child process, so live log streaming and the interactive OTP prompt work.
+//
+// The actual tool doesn't run directly — like elevate_darwin.go, this
+// re-execs this same binary as `pkexec ingress --pty-exec <tool> <args...>`
+// (see elevatedwrapper_linux.go) rather than `pkexec <tool> <args...>`
+// directly, purely so Terminate() above has a same-privilege process to
+// signal.
 func elevatedCommand(name string, args ...string) (elevatedProc, func(), error) {
-	fullArgs := append([]string{name}, args...)
+	toolPath, err := exec.LookPath(name)
+	if err != nil {
+		return nil, nil, fmt.Errorf("looking up %s: %w", name, err)
+	}
+	selfPath, err := os.Executable()
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolving own executable path: %w", err)
+	}
+
+	fullArgs := append([]string{selfPath, "--pty-exec", toolPath}, args...)
 	cmd := exec.Command("pkexec", fullArgs...)
 
 	stdin, err := cmd.StdinPipe()
@@ -57,8 +79,3 @@ func elevatedCommand(name string, args ...string) (elevatedProc, func(), error) 
 	proc := &unixElevatedProc{cmd: cmd, stdin: stdin, stdout: pr, pipeWriter: pw}
 	return proc, func() {}, nil
 }
-
-// runPtyExec is a no-op stub here — the "--pty-exec" hidden re-exec mode
-// exists only to work around a macOS-specific AuthorizationExecuteWithPrivileges
-// quirk (see ptyproxy_darwin.go); pkexec doesn't have that problem.
-func runPtyExec(args []string) {}
