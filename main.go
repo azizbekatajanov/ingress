@@ -97,10 +97,15 @@ func main() {
 			Assets: assets,
 		},
 		OnStartup: app.startup,
-		// See dockicon_darwin.go: must run after Wails' own launch sequence
-		// has forced NSApplicationActivationPolicyRegular, which OnStartup
-		// (fired from a goroutine racing that sequence) can't guarantee.
-		OnDomReady:    func(ctx context.Context) { hideDockIcon() },
+		// See dockicon_darwin.go and fullscreen_darwin.go: both must run
+		// after Wails' own launch sequence has done its thing (forced
+		// NSApplicationActivationPolicyRegular; native window created),
+		// which OnStartup — fired from a goroutine racing that sequence —
+		// can't guarantee.
+		OnDomReady: func(ctx context.Context) {
+			hideDockIcon()
+			enableWindowFullscreen()
+		},
 		OnBeforeClose: app.beforeClose,
 		Bind: []interface{}{
 			app,

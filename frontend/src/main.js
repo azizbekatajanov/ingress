@@ -3,7 +3,7 @@ import {
   GetPassword, SetPassword, GetTheme, SetTheme,
   Connect, Disconnect, CancelConnect, SubmitOtp, GetSnapshot,
   CheckOpenfortivpn, InstallOpenfortivpn, BrowseFile,
-  WindowMinimise, WindowToggleMaximise, HideWindow, ConfirmQuit,
+  WindowMinimise, WindowToggleFullscreen, HideWindow, ConfirmQuit,
   GetAppInfo,
 } from '../wailsjs/go/main/App';
 import { EventsOn, BrowserOpenURL } from '../wailsjs/runtime/runtime';
@@ -294,7 +294,7 @@ $('#otpCode').addEventListener('input', e => { state.otpCode = e.target.value.to
 // window controls (frameless window — traffic lights are custom-drawn, see style.css)
 $('#dotClose').onclick = () => HideWindow();
 $('#dotMinimise').onclick = () => WindowMinimise();
-$('#dotMaximise').onclick = () => WindowToggleMaximise();
+$('#dotMaximise').onclick = () => WindowToggleFullscreen();
 
 document.querySelectorAll('.tab[data-tab]').forEach(t => t.onclick = () => { state.activeTab = t.dataset.tab; render(); });
 document.querySelectorAll('[data-browse]').forEach(b => b.onclick = async () => {

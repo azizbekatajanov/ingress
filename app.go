@@ -154,8 +154,18 @@ func (a *App) WindowMinimise() {
 	wailsRuntime.WindowMinimise(a.ctx)
 }
 
-func (a *App) WindowToggleMaximise() {
-	wailsRuntime.WindowToggleMaximise(a.ctx)
+// WindowToggleFullscreen is what the green traffic-light dot calls — real
+// macOS fullscreen (its own Space, exit via Esc or clicking the dot again),
+// not just WindowToggleMaximise's resize-to-screen-bounds. Needs
+// enableWindowFullscreen (main.go, fullscreen_darwin.go) to have already run
+// once at startup — this window is borderless under the hood (Frameless:
+// true), which doesn't get AppKit's usual automatic fullscreen eligibility.
+func (a *App) WindowToggleFullscreen() {
+	if wailsRuntime.WindowIsFullscreen(a.ctx) {
+		wailsRuntime.WindowUnfullscreen(a.ctx)
+	} else {
+		wailsRuntime.WindowFullscreen(a.ctx)
+	}
 }
 
 // HideWindow is what the red traffic-light dot calls — this app runs in the

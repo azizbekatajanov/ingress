@@ -7,8 +7,17 @@ package main
 #cgo LDFLAGS: -framework Cocoa
 #import <Cocoa/Cocoa.h>
 
+// Dispatched onto the main queue for the same reason fullscreen_darwin.go's
+// grantFullScreenPrimary is: OnDomReady (main.go) fires from a background
+// goroutine, not the main thread, and AppKit calls that touch window/app
+// UI state from off the main thread are a reliable way to crash — confirmed
+// live for the fullscreen case (NSInternalInconsistencyException), so this
+// one is dispatched too rather than relying on setActivationPolicy: happening
+// not to hit the same assertion.
 static void setAccessoryActivationPolicy(void) {
-    [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+    });
 }
 */
 import "C"
