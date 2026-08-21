@@ -12,16 +12,21 @@ package main
 // — calling into AppKit window APIs directly from there crashes with
 // "NSWindow geometry should only be modified on the main thread!"
 // (NSInternalInconsistencyException), confirmed live via a crash log.
+//
+// Applies to every window in [NSApp windows], not just windows[0] — a
+// WKWebView-based app can have more than one NSWindow instance at this
+// point (WebKit's own helper/utility windows), and there's no guarantee
+// the visible main window is first in that array. Grabbing windows[0]
+// specifically risked flagging the wrong window, leaving the real one
+// still ineligible for fullscreen and the green dot silently doing
+// nothing — the actual bug this was rewritten to rule out.
 static void grantFullScreenPrimary(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        NSArray<NSWindow *> *windows = [NSApp windows];
-        if (windows.count == 0) {
-            return;
+        for (NSWindow *win in [NSApp windows]) {
+            NSWindowCollectionBehavior behaviour = [win collectionBehavior];
+            behaviour |= NSWindowCollectionBehaviorFullScreenPrimary;
+            [win setCollectionBehavior:behaviour];
         }
-        NSWindow *win = windows[0];
-        NSWindowCollectionBehavior behaviour = [win collectionBehavior];
-        behaviour |= NSWindowCollectionBehaviorFullScreenPrimary;
-        [win setCollectionBehavior:behaviour];
     });
 }
 */
