@@ -468,8 +468,8 @@ func (m *Manager) finish(conn *liveConnection) {
 	m.emit(conn)
 
 	// A failed connection attempt is otherwise invisible whenever the window
-	// is hidden — which, for a menu-bar-only app whose profile rows are
-	// clickable right from the tray (see tray.go), is most of the time. The
+	// is hidden — easy to end up in, since profile rows are clickable right
+	// from the tray (see tray.go) without ever showing the window at all. The
 	// LastError plumbing into ConnectionSnapshot/#errorBanner was already
 	// correct; nothing was there to look at it. Bring the window up and
 	// select the profile that failed, so the user sees exactly which

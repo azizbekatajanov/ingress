@@ -174,14 +174,12 @@ func (a *App) WindowToggleFullscreen() {
 // by Wails regardless of this custom frameless chrome) actually quits.
 //
 // Uses WindowHide, not WindowMinimise: Minimise leaves a genie-effect
-// thumbnail parked in the Dock, which reads as "still an open window" and
-// is exactly what a menu-bar-only utility (LSUIElement, see
-// build/darwin/Info.plist — no Dock icon of its own at all) shouldn't do.
-// WindowHide is the real per-window macOS primitive ([mainWindow
-// orderOut:nil] on the Wails side) — the window fully disappears with no
-// Dock trace, same as any other tray app, and WindowShow
-// (makeKeyAndOrderFront + activate, wired to the tray's "Открыть Ingress")
-// reliably brings it back.
+// thumbnail parked in the Dock, which reads as "still an open window" —
+// not what clicking "hide to tray" should look like. WindowHide is the
+// real per-window macOS primitive ([mainWindow orderOut:nil] on the Wails
+// side) — the window fully disappears, and WindowShow (makeKeyAndOrderFront
+// + activate, wired to the tray's "Открыть Ingress" and to clicking the
+// Dock icon) reliably brings it back.
 func (a *App) HideWindow() {
 	wailsRuntime.WindowHide(a.ctx)
 }
