@@ -73,6 +73,14 @@ var (
 	ipAssignRe  = regexp.MustCompile(`(?i)local\s+ip\s+address\s+([0-9.]+)`)
 	ifaceUpRe   = regexp.MustCompile(`(?i)interface\s+(\S+)\s+is\s+up`)
 	errorLineRe = regexp.MustCompile(`(?i)^\s*ERROR:\s*(.+)$`)
+	// ansiEscapeRe strips ANSI SGR color codes (e.g. "\x1b[0;0m") that
+	// openfortivpn/pppd intersperse in their output — confirmed live:
+	// "\x1b[0;0mERROR:  Could not authenticate..." failed to match
+	// errorLineRe's ^-anchored pattern (a terminal renders the escape as
+	// color, not visible text, which is why the raw log looked clean when
+	// eyeballed but the regex saw a line that didn't start with "ERROR:").
+	// Applied to every line before any other regex runs, in pump below.
+	ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 	// Matches the one-line form of openfortivpn's untrusted-gateway-cert
 	// error ("...rerun with:\n    --trusted-cert <sha256>"), which is easier
 	// to parse reliably than the multi-line "sha256 digest:\n    <hash>" block.
@@ -299,7 +307,7 @@ func (m *Manager) pump(conn *liveConnection, r io.Reader) {
 	}()
 
 	emit := func(raw []byte) {
-		line := strings.TrimRight(string(raw), "\r\n")
+		line := ansiEscapeRe.ReplaceAllString(strings.TrimRight(string(raw), "\r\n"), "")
 		conn.addLog(line)
 		m.handleLine(conn, line)
 	}
