@@ -101,6 +101,17 @@ function render() {
   const selIdx = state.profiles.indexOf(sp);
   const snap = sp ? snapshotOf(sp.id) : null;
 
+  // A connect attempt takes over the content area (#viewConnecting/#otpOverlay
+  // sit on top of it, see style.css), but nothing previously stopped Settings
+  // from staying open underneath — reachable either by clicking the gear
+  // mid-attempt (now hidden during connecting/otp too, below) or because the
+  // attempt itself was started from the tray while Settings was already open
+  // for this profile. Both left the "Подключение…" card rendered directly
+  // over the settings form, looking broken. Confirmed live via a screenshot.
+  if (snap && (snap.status === 'connecting' || snap.status === 'otp')) {
+    state.showSettings = false;
+  }
+
   // sidebar list
   profileListEl.innerHTML = '';
   state.profiles.forEach((p, i) => {
@@ -142,7 +153,7 @@ function render() {
   else if (snap.status === 'otp') { pill.classList.add('pending'); pill.textContent = 'Ожидание кода'; btn.className = 'btn neutral'; btn.textContent = 'Ожидание кода'; btn.onclick = () => cancelConnect(sp.id); }
   else { pill.textContent = 'Не подключено'; btn.textContent = 'Подключить'; btn.onclick = () => startConnect(sp.id); }
 
-  $('#gearBtn').style.display = sp && snap.status === 'connected' ? 'none' : 'flex';
+  $('#gearBtn').style.display = sp && snap.status !== 'disconnected' ? 'none' : 'flex';
 
   // tabs
   const isConnected = sp && snap.status === 'connected';

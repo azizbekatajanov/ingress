@@ -6,7 +6,7 @@ package main
 // sync with wails.json's info.productVersion (which drives Info.plist) —
 // there's no build-time wiring between the two, so both are hand-maintained.
 const (
-	AppVersion   = "1.0.3"
+	AppVersion   = "1.0.4"
 	AppAuthor    = "Azizbek Atajanov"
 	AppGithubURL = "https://github.com/azizbekatajanov/ingress"
 )
