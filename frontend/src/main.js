@@ -205,7 +205,7 @@ function renderErrorBanner(snap) {
   const host = $('#errorBanner');
   host.innerHTML = '';
   if (!snap.lastError) return;
-  host.appendChild(el('div', 'banner error', snap.lastError));
+  host.appendChild(el('div', 'banner error', `Не удалось подключиться: ${snap.lastError}`));
 }
 
 function renderInstallBanner() {
@@ -356,6 +356,16 @@ EventsOn('quit:confirm', () => {
   $('#quitOverlay').hidden = false;
 });
 EventsOn('about:show', showAbout);
+// Fired by Manager.finish (vpn_manager.go) right when a connection attempt
+// fails — jumps to the profile that failed so its overview + error banner
+// is what's actually on screen once the window comes forward, rather than
+// whatever profile happened to be selected before (often not the one you
+// just tried to connect from the tray).
+EventsOn('profile:failed', (profileId) => {
+  state.selectedProfileId = profileId;
+  state.showSettings = false;
+  render();
+});
 
 // ---- startup ----
 async function init() {

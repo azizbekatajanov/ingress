@@ -170,6 +170,14 @@ func (t *Tray) refreshItemLocked(profileID string) {
 		title += " — подключение…"
 	case StatusOtp:
 		title += " — код…"
+	case StatusDisconnected:
+		// Otherwise a failed attempt looks identical to a profile that was
+		// simply never connected — the tray row was one of the places this
+		// went unnoticed (see Manager.finish's profile:failed emit for the
+		// other one, the in-window error banner).
+		if snap.LastError != "" {
+			title += " — ошибка"
+		}
 	}
 	item.SetTitle(title)
 	if snap.Status == StatusConnected {

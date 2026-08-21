@@ -450,12 +450,30 @@ func (m *Manager) finish(conn *liveConnection) {
 	conn.mu.Lock()
 	alreadyDisconnected := conn.status == StatusDisconnected
 	conn.status = StatusDisconnected
+	lastError := conn.lastError
+	cancelling := conn.cancelling
 	conn.mu.Unlock()
 	if !alreadyDisconnected {
 		conn.addLog("Отключено")
 	}
 	conn.cleanup()
 	m.emit(conn)
+
+	// A failed connection attempt is otherwise invisible whenever the window
+	// is hidden — which, for a menu-bar-only app whose profile rows are
+	// clickable right from the tray (see tray.go), is most of the time. The
+	// LastError plumbing into ConnectionSnapshot/#errorBanner was already
+	// correct; nothing was there to look at it. Bring the window up and
+	// select the profile that failed, so the user sees exactly which
+	// profile and why instead of just noticing nothing happened. Skipped
+	// when the user cancelled themselves (cancelling never leaves an error
+	// set anyway, but this keeps the intent explicit).
+	if lastError != "" && !cancelling {
+		m.store.SetSelectedID(conn.profileID)
+		wailsRuntime.EventsEmit(m.ctx, "profile:failed", conn.profileID)
+		wailsRuntime.WindowShow(m.ctx)
+		wailsRuntime.WindowUnminimise(m.ctx)
+	}
 }
 
 // SubmitOtp writes the user's 2FA code to openfortivpn's stdin, exactly where
