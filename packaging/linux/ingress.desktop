@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ingress
+Comment=Менеджер нескольких одновременных VPN-туннелей openfortivpn
+Exec=ingress
+Icon=ingress
+Terminal=false
+Categories=Network;
+StartupWMClass=ingress

@@ -1,0 +1,31 @@
+# nfpm (https://nfpm.goreleaser.com) package definition for the .deb.
+# ${VERSION} is substituted by the release workflow via envsubst before
+# nfpm reads this file — kept as a literal placeholder here rather than a
+# real version so this file doesn't need editing on every release.
+name: ingress
+arch: amd64
+platform: linux
+version: ${VERSION}
+maintainer: Azizbek Atajanov
+homepage: https://github.com/azizbekatajanov/ingress
+description: |
+  Менеджер нескольких одновременных VPN-туннелей openfortivpn (FortiGate SSL-VPN).
+  Держит несколько профилей подключёнными одновременно — то, чего не умеет
+  официальный FortiClient.
+section: net
+priority: optional
+depends:
+  - policykit-1
+  - libwebkit2gtk-4.1-0
+  - libgtk-3-0
+maintainer_scripts:
+  postinstall: ./postinst.sh
+contents:
+  - src: ../../build/bin/ingress
+    dst: /usr/bin/ingress
+    file_info:
+      mode: 0755
+  - src: ./ingress.desktop
+    dst: /usr/share/applications/ingress.desktop
+  - src: ../../build/appicon.png
+    dst: /usr/share/icons/hicolor/1024x1024/apps/ingress.png

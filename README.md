@@ -29,7 +29,17 @@ or in Finder: right-click Ingress.app → **Open** (not a double-click) → conf
 
 **Windows:** run the `-installer.exe`. Elevation with live log streaming isn't implemented yet (see the platform table below) — the UI works, but `Connect` returns an error.
 
-**Linux:** extract the `.tar.gz` and run the `ingress` binary. Elevation is via `pkexec`.
+**Linux (Debian/Ubuntu):** download the `.deb` and install it:
+
+```bash
+sudo apt install ./Ingress-*-linux-amd64.deb
+```
+
+(`apt install ./file.deb`, not `dpkg -i`, so `apt` also pulls in `policykit-1`/GTK/WebKit2GTK if anything's missing.) This puts the binary at `/usr/bin/ingress` and adds a proper application-menu entry with icon.
+
+**Linux (other distros):** extract the `.tar.gz` and run the `ingress` binary directly — no menu entry, you launch it yourself. `pkexec` (from `policykit-1`) needs to be installed separately.
+
+Either way, elevation is via `pkexec`, which shows your desktop's native polkit authentication dialog.
 
 ## Platform support
 

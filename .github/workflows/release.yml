@@ -42,10 +42,12 @@ jobs:
       - name: Install Linux GUI build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev gettext-base
 
-      - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+      - name: Install Wails CLI and nfpm
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@latest
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
       - name: Build
         # -tags webkit2_41: Ubuntu 24.04 (this runner's image) only ships
@@ -66,17 +68,37 @@ jobs:
           cp build/bin/ingress "$STAGE/"
           cp README.md "$STAGE/"
           tar -C /tmp -czf "Ingress-${VERSION}-linux-amd64.tar.gz" ingress-linux
-          echo "ASSET=Ingress-${VERSION}-linux-amd64.tar.gz" >> "$GITHUB_ENV"
+          echo "TARBALL=Ingress-${VERSION}-linux-amd64.tar.gz" >> "$GITHUB_ENV"
 
-      - name: Checksum
-        run: shasum -a 256 "$ASSET" > "$ASSET.sha256"
+      - name: Package (.deb)
+        # nfpm (https://nfpm.goreleaser.com) is a pure-Go deb/rpm/apk
+        # packager — no dpkg-deb/fakeroot/rpmbuild needed, just the config
+        # in packaging/linux/nfpm.yaml. envsubst fills in ${VERSION}; nfpm's
+        # own env-expansion support isn't relied on since its exact syntax
+        # wasn't verifiable without a real run.
+        run: |
+          set -e
+          VERSION="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${VERSION#v}"
+          export VERSION
+          cd packaging/linux
+          envsubst < nfpm.yaml > nfpm.generated.yaml
+          DEB="Ingress-${VERSION}-linux-amd64.deb"
+          nfpm package --config nfpm.generated.yaml --packager deb --target "../../$DEB"
+          cd ../..
+          echo "DEB=$DEB" >> "$GITHUB_ENV"
+
+      - name: Checksums
+        run: |
+          shasum -a 256 "$TARBALL" > "$TARBALL.sha256"
+          shasum -a 256 "$DEB" > "$DEB.sha256"
 
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber --repo "${{ github.repository }}"
+          gh release upload "$TAG" "$TARBALL" "$TARBALL.sha256" "$DEB" "$DEB.sha256" --clobber --repo "${{ github.repository }}"
 
   windows:
     runs-on: windows-latest
