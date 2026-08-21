@@ -48,7 +48,13 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
       - name: Build
-        run: wails build -clean -platform linux/amd64
+        # -tags webkit2_41: Ubuntu 24.04 (this runner's image) only ships
+        # libwebkit2gtk-4.1-dev — the 4.0 package Wails links against by
+        # default was dropped upstream. Confirmed live: the default build
+        # failed with "Package webkit2gtk-4.0 was not found in the
+        # pkg-config search path" despite 4.1-dev being installed above;
+        # this tag is Wails' own documented opt-in for the 4.1 pkg-config name.
+        run: wails build -clean -platform linux/amd64 -tags webkit2_41
 
       - name: Package (tar.gz)
         run: |
