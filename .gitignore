@@ -4,6 +4,10 @@ frontend/dist
 frontend/wailsjs
 frontend/package.json.md5
 
+# Release artifacts (.dmg, checksums, notes) — built locally, uploaded to
+# GitHub Releases, never committed to the repo itself.
+build/release
+
 # Stray `go build`/`go build ./...` output at the module root (defaults to
 # the module's directory name — not a build/bin artifact, so not covered by
 # the rule above)
