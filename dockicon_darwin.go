@@ -17,6 +17,19 @@ package main
 static void setAccessoryActivationPolicy(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        // Without this, the app *looks* frontmost (its name shows in the
+        // menu bar, its window is key) but the native "Ingress"/"Edit" menu
+        // bar items don't respond to clicks — until something else forces
+        // AppKit to re-evaluate activation, e.g. toggling fullscreen.
+        // Reported live: the menu was dead on launch, started working only
+        // after entering and leaving fullscreen once. Switching
+        // activationPolicy on an already-running, already-activated app is
+        // a known rough edge — AppKit's internal notion of "the active app"
+        // doesn't automatically get refreshed for the new policy, so the
+        // menu bar stays wired to stale state. Re-activating right after
+        // the policy change forces that refresh immediately instead of
+        // waiting for an unrelated transition to trigger it.
+        [NSApp activateIgnoringOtherApps:YES];
     });
 }
 */
