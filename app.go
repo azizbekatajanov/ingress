@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -180,7 +181,28 @@ func (a *App) WindowToggleFullscreen() {
 // side) — the window fully disappears, and WindowShow (makeKeyAndOrderFront
 // + activate, wired to the tray's "Открыть Ingress" and to clicking the
 // Dock icon) reliably brings it back.
+//
+// Reported live: clicking the red dot while the window was in real macOS
+// fullscreen turned the whole screen black instead of hiding it. Root
+// cause — orderOut: on a window that still occupies a fullscreen Space
+// doesn't animate out of that Space first; the Space is left rendering
+// nothing. Native apps avoid this because AppKit coordinates "exit
+// fullscreen" and "close" as one transition when you close from fullscreen
+// — we don't get that for free since this window is Frameless (custom-drawn
+// traffic lights, no native close button for AppKit to hook). Unfullscreen
+// first and poll WindowIsFullscreen until the exit transition has actually
+// finished before hiding, rather than guessing a fixed delay.
 func (a *App) HideWindow() {
+	if wailsRuntime.WindowIsFullscreen(a.ctx) {
+		go func() {
+			wailsRuntime.WindowUnfullscreen(a.ctx)
+			for i := 0; i < 40 && wailsRuntime.WindowIsFullscreen(a.ctx); i++ {
+				time.Sleep(25 * time.Millisecond)
+			}
+			wailsRuntime.WindowHide(a.ctx)
+		}()
+		return
+	}
 	wailsRuntime.WindowHide(a.ctx)
 }
 
