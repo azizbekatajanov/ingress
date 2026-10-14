@@ -20,11 +20,29 @@ package main
 // specifically risked flagging the wrong window, leaving the real one
 // still ineligible for fullscreen and the green dot silently doing
 // nothing — the actual bug this was rewritten to rule out.
+//
+// Also sets FullScreenDisallowsTiling: macOS Split View puts this window
+// side-by-side with another app's in one shared fullscreen Space, and
+// exiting it — via the green dot, the only control this frameless window
+// has, since it has no native titlebar for AppKit's own hover-reveal exit
+// affordance — leaves it broken every time: the window shrinks to the
+// middle of the still-fullscreen Space with its vacated tile slot black,
+// and the other app never returns to its own normal window either.
+// Confirmed live this isn't about *how* the exit call is made — a bare
+// native [window toggleFullScreen:nil], bypassing Wails' own exit path
+// entirely, reproduced the exact same broken state. Whatever's actually
+// wrong lives deeper in how AppKit negotiates a Split View tile's exit for
+// a window with no native chrome — not something worth chasing further
+// here. Solo fullscreen (this app's actual use case for the green dot)
+// doesn't go through any of that negotiation and is unaffected; this just
+// stops macOS from offering Ingress as a tiling candidate in the first
+// place, so nobody can land in the broken state.
 static void grantFullScreenPrimary(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         for (NSWindow *win in [NSApp windows]) {
             NSWindowCollectionBehavior behaviour = [win collectionBehavior];
             behaviour |= NSWindowCollectionBehaviorFullScreenPrimary;
+            behaviour |= NSWindowCollectionBehaviorFullScreenDisallowsTiling;
             [win setCollectionBehavior:behaviour];
         }
     });
