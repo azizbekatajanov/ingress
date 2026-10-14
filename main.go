@@ -106,7 +106,10 @@ func main() {
 		// See fullscreen_darwin.go: must run after Wails' own launch
 		// sequence has created the native window, which OnStartup — fired
 		// from a goroutine racing that sequence — can't guarantee.
-		OnDomReady:    func(ctx context.Context) { enableWindowFullscreen() },
+		OnDomReady: func(ctx context.Context) {
+			enableWindowFullscreen()
+			registerReopenOnActivate()
+		},
 		OnBeforeClose: app.beforeClose,
 		Bind: []interface{}{
 			app,
