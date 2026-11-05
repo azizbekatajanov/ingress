@@ -81,6 +81,7 @@ func (a *App) RemoveProfile(id string) error {
 		return nil
 	}
 	_ = a.manager.CancelConnect(id)
+	deleteLogo(id)
 	if err := DeletePassword(id); err != nil {
 		log.Printf("ingress: failed to delete keychain entry for %s: %v", id, err)
 	}

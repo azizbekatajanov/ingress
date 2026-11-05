@@ -68,6 +68,14 @@
 
         <div class="form" id="viewGeneral" hidden>
           <div class="field">
+            <label>Логотип профиля</label>
+            <div class="logo-wrap">
+              <div class="avatar-lg" id="logoPreview"></div>
+              <div class="btn neutral" id="logoPickBtn">Загрузить…</div>
+              <div class="btn neutral" id="logoRemoveBtn">Убрать</div>
+            </div>
+          </div>
+          <div class="field">
             <label>Название профиля</label>
             <input type="text" id="f-name">
           </div>
@@ -217,6 +225,17 @@
         <div class="otp-sub"><span class="link" id="aboutGithub"></span></div>
         <div class="otp-actions">
           <div class="btn primary" id="aboutCloseBtn">Закрыть</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="otp-overlay" id="deleteOverlay" hidden>
+      <div class="otp-modal">
+        <div class="otp-title" id="deleteTitle">Удалить профиль?</div>
+        <div class="otp-sub" id="deleteSub">Профиль и сохранённый пароль будут удалены без возможности восстановления.</div>
+        <div class="otp-actions">
+          <div class="btn neutral" id="deleteCancelBtn">Отмена</div>
+          <div class="btn danger" id="deleteConfirmBtn">Удалить</div>
         </div>
       </div>
     </div>

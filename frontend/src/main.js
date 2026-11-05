@@ -3,6 +3,7 @@ import {
   GetPassword, SetPassword, GetTheme, SetTheme,
   Connect, Disconnect, CancelConnect, SubmitOtp, GetSnapshot,
   CheckOpenfortivpn, InstallOpenfortivpn, BrowseFile,
+  PickProfileLogo, RemoveProfileLogo, GetProfileLogos,
   WindowMinimise, WindowToggleFullscreen, HideWindow, ConfirmQuit,
   GetAppInfo,
 } from '../wailsjs/go/main/App';
@@ -20,6 +21,7 @@ const state = {
   otpCode: '',
   snapshots: {}, // profileId -> ConnectionSnapshot from the Go backend
   passwords: {}, // profileId -> cached password (fetched from keychain on demand)
+  logos: {}, // profileId -> data: URL of the uploaded logo
   binaryStatus: null,
   appInfo: null,
 };
@@ -68,24 +70,39 @@ async function addProfile() {
   state.activeTab = 'general'; state.showSettings = false;
   render();
 }
+let pendingDeleteId = null;
+function askRemoveProfile(id) {
+  const p = state.profiles.find(x => x.id === id);
+  if (!p || state.profiles.length <= 1) return;
+  pendingDeleteId = id;
+  $('#deleteTitle').textContent = `Удалить профиль «${p.name || 'Без названия'}»?`;
+  const st = snapshotOf(id).status;
+  $('#deleteSub').textContent = st === 'disconnected'
+    ? 'Профиль и сохранённый пароль будут удалены без возможности восстановления.'
+    : 'VPN-подключение будет разорвано, профиль и сохранённый пароль будут удалены без возможности восстановления.';
+  $('#deleteOverlay').hidden = false;
+}
+function closeDeleteDialog() { pendingDeleteId = null; $('#deleteOverlay').hidden = true; }
 async function removeProfile(id) {
   if (state.profiles.length <= 1) return;
-  await RemoveProfile(id);
+  try { await RemoveProfile(id); } catch (e) { alert('Не удалось удалить профиль: ' + e); return; }
   state.profiles = state.profiles.filter(x => x.id !== id);
-  delete state.snapshots[id]; delete state.passwords[id];
+  delete state.snapshots[id]; delete state.passwords[id]; delete state.logos[id];
   if (state.selectedProfileId === id) state.selectedProfileId = state.profiles[0].id;
   render();
 }
 
-let saveTimer = null;
+// Debounce per profile: one shared timer dropped profile A's pending save
+// if the user edited profile B within the 250ms window.
+const saveTimers = {};
 function scheduleSave(profile) {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { UpdateProfile(profile).catch(() => {}); }, 250);
+  clearTimeout(saveTimers[profile.id]);
+  saveTimers[profile.id] = setTimeout(() => { UpdateProfile(profile).catch(() => {}); }, 250);
 }
-let passwordSaveTimer = null;
+const passwordSaveTimers = {};
 function schedulePasswordSave(id, password) {
-  clearTimeout(passwordSaveTimer);
-  passwordSaveTimer = setTimeout(() => { SetPassword(id, password).catch(() => {}); }, 250);
+  clearTimeout(passwordSaveTimers[id]);
+  passwordSaveTimers[id] = setTimeout(() => { SetPassword(id, password).catch(() => {}); }, 250);
 }
 
 // ---- DOM refs ----
@@ -94,6 +111,20 @@ const profileListEl = $('#profileList');
 const profileSelectEl = $('#profileSelect');
 
 function el(tag, cls, text) { const e = document.createElement('div'); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+
+// Shows the profile's uploaded logo if there is one, otherwise the colored
+// first-letter badge.
+function paintAvatar(node, p, color) {
+  const logo = p.logo && state.logos[p.id];
+  node.classList.toggle('has-logo', !!logo);
+  if (logo) {
+    node.textContent = '';
+    node.style.background = `center / cover no-repeat url(${logo})`;
+  } else {
+    node.textContent = (p.name||'?').trim().charAt(0).toUpperCase() || '?';
+    node.style.background = color;
+  }
+}
 
 function render() {
   document.body.className = state.theme === 'dark' ? 'theme-dark' : 'theme-light';
@@ -118,8 +149,8 @@ function render() {
     const pStatus = snapshotOf(p.id).status;
     const row = el('div', 'profile-row' + (p.id === state.selectedProfileId ? ' selected' : ''));
     row.onclick = () => { state.selectedProfileId = p.id; state.showSettings = false; SelectProfile(p.id).catch(() => {}); render(); };
-    const avatar = el('div', 'avatar', (p.name||'?').trim().charAt(0).toUpperCase() || '?');
-    avatar.style.background = PROFILE_COLORS[i % PROFILE_COLORS.length];
+    const avatar = el('div', 'avatar');
+    paintAvatar(avatar, p, PROFILE_COLORS[i % PROFILE_COLORS.length]);
     const info = el('div', 'profile-info');
     info.appendChild(el('div', 'profile-name', p.name));
     info.appendChild(el('div', 'profile-host', p.host ? `${p.host}:${p.port}` : 'не настроен'));
@@ -128,7 +159,7 @@ function render() {
     if (pStatus === 'connecting' || pStatus === 'otp') row.appendChild(el('div', 'status-dot connecting'));
     if (state.profiles.length > 1) {
       const del = el('div', 'delete-btn', '×');
-      del.onclick = (e) => { e.stopPropagation(); removeProfile(p.id); };
+      del.onclick = (e) => { e.stopPropagation(); askRemoveProfile(p.id); };
       row.appendChild(del);
     }
     profileListEl.appendChild(row);
@@ -183,8 +214,7 @@ function render() {
   $('#viewLog').hidden = !(isConnected && state.activeTab === 'log');
 
   if (showOverview) {
-    const avatar = $('#overviewAvatar'); avatar.textContent = (sp.name||'?').charAt(0).toUpperCase();
-    avatar.style.background = PROFILE_COLORS[selIdx % PROFILE_COLORS.length];
+    paintAvatar($('#overviewAvatar'), sp, PROFILE_COLORS[selIdx % PROFILE_COLORS.length]);
     $('#overviewName').textContent = sp.name;
     $('#overviewHost').textContent = sp.host ? `${sp.host}:${sp.port}` : 'не настроен';
     renderInstallBanner();
@@ -239,6 +269,8 @@ function renderInstallBanner() {
 }
 
 function fillForm(p) {
+  paintAvatar($('#logoPreview'), p, PROFILE_COLORS[state.profiles.indexOf(p) % PROFILE_COLORS.length]);
+  $('#logoRemoveBtn').style.display = p.logo ? '' : 'none';
   $('#f-name').value = p.name;
   $('#f-host').value = p.host;
   $('#f-port').value = p.port;
@@ -277,7 +309,10 @@ function fillLog(snap) {
   if (lines.length === 0) { panel.appendChild(el('div', 'empty', 'Журнал пуст — выполните подключение.')); return; }
   lines.forEach(line => {
     const row = document.createElement('div');
-    row.innerHTML = `<span class="ts">[${line.ts}]</span> ${line.text}`;
+    const ts = document.createElement('span');
+    ts.className = 'ts'; ts.textContent = `[${line.ts}]`;
+    row.appendChild(ts);
+    row.appendChild(document.createTextNode(' ' + line.text)); // VPN output is untrusted: never innerHTML
     panel.appendChild(row);
   });
   panel.scrollTop = panel.scrollHeight;
@@ -336,6 +371,32 @@ $('#f-password').addEventListener('input', e => {
   if (sw) sw.onclick = () => { const sp = selected(); if (!sp) return; sp[key] = !sp[key]; scheduleSave(sp); render(); };
 });
 
+// ---- profile logo ----
+function replaceProfile(updated) {
+  const i = state.profiles.findIndex(x => x.id === updated.id);
+  if (i >= 0) state.profiles[i] = { ...state.profiles[i], logo: updated.logo };
+}
+$('#logoPickBtn').onclick = async () => {
+  const sp = selected(); if (!sp) return;
+  try {
+    const updated = await PickProfileLogo(sp.id);
+    if (updated.logo) { state.logos = await GetProfileLogos(); replaceProfile(updated); }
+  } catch (e) { alert('Не удалось загрузить логотип: ' + e); }
+  render();
+};
+$('#logoRemoveBtn').onclick = async () => {
+  const sp = selected(); if (!sp) return;
+  try { replaceProfile(await RemoveProfileLogo(sp.id)); delete state.logos[sp.id]; } catch (e) { /* ignore */ }
+  render();
+};
+
+// ---- delete confirmation ----
+$('#deleteCancelBtn').onclick = closeDeleteDialog;
+$('#deleteConfirmBtn').onclick = async () => {
+  const id = pendingDeleteId; closeDeleteDialog();
+  if (id) await removeProfile(id);
+};
+
 // ---- about ----
 function showAbout() {
   if (state.appInfo) {
@@ -373,6 +434,7 @@ EventsOn('about:show', showAbout);
 // whatever profile happened to be selected before (often not the one you
 // just tried to connect from the tray).
 EventsOn('profile:failed', (profileId) => {
+  if (!state.profiles.some(p => p.id === profileId)) return;
   state.selectedProfileId = profileId;
   state.showSettings = false;
   render();
@@ -380,9 +442,10 @@ EventsOn('profile:failed', (profileId) => {
 
 // ---- startup ----
 async function init() {
-  const [profiles, selectedId, theme, binaryStatus, appInfo] = await Promise.all([
-    GetProfiles(), GetSelectedProfileID(), GetTheme(), CheckOpenfortivpn(), GetAppInfo(),
+  const [profiles, selectedId, theme, binaryStatus, appInfo, logos] = await Promise.all([
+    GetProfiles(), GetSelectedProfileID(), GetTheme(), CheckOpenfortivpn(), GetAppInfo(), GetProfileLogos(),
   ]);
+  state.logos = logos || {};
   state.profiles = profiles;
   state.selectedProfileId = selectedId || (profiles[0] && profiles[0].id);
   state.theme = theme;

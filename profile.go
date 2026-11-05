@@ -17,12 +17,16 @@ type Profile struct {
 	Port     string `json:"port"`
 	Username string `json:"username"`
 	Realm    string `json:"realm"`
+	// Logo reports that logos/<id>.png exists (see logo.go). Managed only by
+	// SetLogo — Update ignores the incoming value so a debounced save from a
+	// stale frontend copy can't wipe it.
+	Logo bool `json:"logo"`
 
-	CaFile              string `json:"caFile"`
-	UserCert            string `json:"userCert"`
-	UserKey             string `json:"userKey"`
-	TrustedCert         string `json:"trustedCert"`
-	InsecureSsl         bool   `json:"insecureSsl"`
+	CaFile      string `json:"caFile"`
+	UserCert    string `json:"userCert"`
+	UserKey     string `json:"userKey"`
+	TrustedCert string `json:"trustedCert"`
+	InsecureSsl bool   `json:"insecureSsl"`
 
 	SetDns             bool   `json:"setDns"`
 	PppdUsePeerdns     bool   `json:"pppdUsePeerdns"`
@@ -134,11 +138,24 @@ func (s *ProfileStore) Update(p Profile) error {
 	defer s.mu.Unlock()
 	for i, existing := range s.cfg.Profiles {
 		if existing.ID == p.ID {
+			p.Logo = existing.Logo
 			s.cfg.Profiles[i] = p
 			return s.save()
 		}
 	}
 	return os.ErrNotExist
+}
+
+func (s *ProfileStore) SetLogo(id string, has bool) (Profile, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, p := range s.cfg.Profiles {
+		if p.ID == id {
+			s.cfg.Profiles[i].Logo = has
+			return s.cfg.Profiles[i], s.save()
+		}
+	}
+	return Profile{}, os.ErrNotExist
 }
 
 func (s *ProfileStore) Remove(id string) error {

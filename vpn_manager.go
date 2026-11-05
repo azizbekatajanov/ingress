@@ -476,7 +476,9 @@ func (m *Manager) finish(conn *liveConnection) {
 	// profile and why instead of just noticing nothing happened. Skipped
 	// when the user cancelled themselves (cancelling never leaves an error
 	// set anyway, but this keeps the intent explicit).
-	if lastError != "" && !cancelling {
+	// A profile deleted mid-attempt must not be re-selected: that would
+	// persist a dangling selectedProfileId and blank the UI.
+	if _, exists := m.store.Get(conn.profileID); exists && lastError != "" && !cancelling {
 		m.store.SetSelectedID(conn.profileID)
 		wailsRuntime.EventsEmit(m.ctx, "profile:failed", conn.profileID)
 		wailsRuntime.WindowShow(m.ctx)
