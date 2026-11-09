@@ -28,11 +28,16 @@ func main() {
 		runPtyExec(os.Args[2:])
 		return
 	}
+	// Hidden root modes `--install-component` / `--remove-component`, run
+	// elevated by ComponentManager (see components_root.go).
+	if len(os.Args) > 1 && isRootComponentCommand(os.Args[1]) {
+		os.Exit(runRootComponentCommand(os.Args[1], os.Args[2:]))
+	}
 
 	// See path_darwin.go: a GUI launch (Finder/Dock/`open`) doesn't inherit
-	// the shell's PATH, so openfortivpn/brew are invisible to exec.LookPath
-	// without this — even though the pty-exec re-exec above already has an
-	// absolute path baked into its argv and doesn't need it.
+	// the shell's PATH, so a system (e.g. Homebrew) openfortivpn is invisible
+	// to exec.LookPath without this. Only matters for the fallback/migration
+	// path in ComponentManager — managed and override binaries are absolute.
 	augmentPATH()
 
 	app := NewApp()

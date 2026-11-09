@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -55,11 +56,9 @@ func (p *unixElevatedProc) Terminate() error {
 // (see elevatedwrapper_linux.go) rather than `pkexec <tool> <args...>`
 // directly, purely so Terminate() above has a same-privilege process to
 // signal.
-func elevatedCommand(name string, args ...string) (elevatedProc, func(), error) {
-	toolPath, err := exec.LookPath(name)
-	if err != nil {
-		return nil, nil, fmt.Errorf("looking up %s: %w", name, err)
-	}
+//
+// toolPath must be absolute — it comes from ComponentManager.ResolvePath.
+func elevatedCommand(toolPath string, args ...string) (elevatedProc, func(), error) {
 	selfPath, err := os.Executable()
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolving own executable path: %w", err)
@@ -78,4 +77,24 @@ func elevatedCommand(name string, args ...string) (elevatedProc, func(), error) 
 
 	proc := &unixElevatedProc{cmd: cmd, stdin: stdin, stdout: pr, pipeWriter: pw}
 	return proc, func() {}, nil
+}
+
+// elevatedRun runs this binary as root via pkexec with args (one of the
+// hidden modes, e.g. --install-component) and returns its combined output.
+func elevatedRun(args ...string) (string, error) {
+	selfPath, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("resolving own executable path: %w", err)
+	}
+	out, err := exec.Command("pkexec", append([]string{selfPath}, args...)...).CombinedOutput()
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		switch exitErr.ExitCode() {
+		case 126:
+			err = errors.New("запрос прав администратора отменён")
+		case 127:
+			err = errors.New("нет прав администратора (pkexec)")
+		}
+	}
+	return string(out), err
 }

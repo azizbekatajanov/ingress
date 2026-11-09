@@ -51,6 +51,9 @@ type profileConfig struct {
 	SelectedProfileID string    `json:"selectedProfileId"`
 	Theme             string    `json:"theme"`
 	SkipQuitConfirm   bool      `json:"skipQuitConfirm"`
+	// ComponentOverrides maps a component name (see components.go) to a
+	// user-chosen binary path that takes precedence over Ingress' own build.
+	ComponentOverrides map[string]string `json:"componentOverrides,omitempty"`
 }
 
 // ProfileStore owns profiles.json in the OS-appropriate config directory
@@ -213,5 +216,25 @@ func (s *ProfileStore) SetSkipQuitConfirm(skip bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cfg.SkipQuitConfirm = skip
+	return s.save()
+}
+
+func (s *ProfileStore) ComponentOverride(name string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cfg.ComponentOverrides[name]
+}
+
+func (s *ProfileStore) SetComponentOverride(name, path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if path == "" {
+		delete(s.cfg.ComponentOverrides, name)
+	} else {
+		if s.cfg.ComponentOverrides == nil {
+			s.cfg.ComponentOverrides = make(map[string]string)
+		}
+		s.cfg.ComponentOverrides[name] = path
+	}
 	return s.save()
 }

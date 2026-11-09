@@ -13,7 +13,8 @@ Built with [Wails](https://wails.io) (Go backend, vanilla JS/HTML/CSS frontend).
 - **Status tab** — connection duration, assigned IP, gateway, TX/RX bytes.
 - **Menu bar / tray icon** with per-profile quick connect/disconnect and a live "connected" badge.
 - **Passwords never touch disk** — stored in the OS keychain (Keychain/Credential Manager/Secret Service), not in the profile config file.
-- Light/dark theme, and a warning banner if a known-broken openfortivpn version is detected (e.g. 1.21+ on macOS Sonoma, see [adrienverge/openfortivpn#1165](https://github.com/adrienverge/openfortivpn/issues/1165)), with a one-click Homebrew install/reinstall.
+- **No Homebrew needed** — Ingress downloads its own pinned, sha256-verified build of the VPN client (openfortivpn; openconnect for GlobalProtect is coming in 2.0) and installs it into a root-owned directory (`/Library/Application Support/Ingress` on macOS, `/opt/ingress` on Linux). An existing system binary keeps working, and a custom path can be set per component in **Компоненты**.
+- Light/dark theme, and a warning banner if a known-broken openfortivpn version is in use (1.21+ on macOS Sonoma, see [adrienverge/openfortivpn#1165](https://github.com/adrienverge/openfortivpn/issues/1165)).
 
 ## Installation
 
@@ -51,7 +52,7 @@ Either way, elevation is via `pkexec`, which shows your desktop's native polkit 
 
 ## Requirements
 
-- [openfortivpn](https://github.com/adrienverge/openfortivpn) installed separately and on `PATH` (`brew install openfortivpn` on macOS; the app also offers to install it for you if missing).
+- Nothing for end users: the app installs its own VPN client builds from [ingress-deps](https://github.com/azizbekatajanov/ingress-deps). To develop against a local archive before those exist, build with `-tags devmanifest` and point `INGRESS_DEV_MANIFEST` at a JSON manifest (see `components_devmanifest.go`).
 - Go 1.25+
 - Node 22 (see `.nvmrc`)
 - [Wails CLI v2](https://wails.io/docs/gettingstarted/installation): `go install github.com/wailsapp/wails/v2/cmd/wails@latest`

@@ -82,14 +82,18 @@ static int rp_execute(const char *tool, char *const *argv, pid_t *outPid, int *o
 import "C"
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"sync"
 	"syscall"
 	"unsafe"
 )
+
+// errAuthorizationCanceled is Security.framework's status when the user
+// dismisses the admin prompt.
+const errAuthorizationCanceled = -60006
 
 // authMu serializes access to rp_execute's cachedAuthRef (a single C-level
 // global, not safe for concurrent use from multiple goroutines — e.g. two
@@ -159,28 +163,51 @@ func (p *authProc) Terminate() error {
 // ("Operation not supported on socket") when there isn't one — exactly our
 // situation. So --pty-exec allocates a fresh pty itself (via creack/pty,
 // independent of its own stdio) instead.
-func elevatedCommand(name string, args ...string) (elevatedProc, func(), error) {
-	toolPath, err := exec.LookPath(name)
+//
+// toolPath must be absolute — it comes from ComponentManager.ResolvePath,
+// never from a PATH lookup.
+func elevatedCommand(toolPath string, args ...string) (elevatedProc, func(), error) {
+	pid, file, err := executeSelfElevated(append([]string{"--pty-exec", toolPath}, args...))
 	if err != nil {
-		return nil, nil, fmt.Errorf("looking up %s: %w", name, err)
+		return nil, nil, err
 	}
+	return &authProc{pid: pid, file: file}, func() {}, nil
+}
+
+// elevatedRun runs this binary as root with args (one of the hidden modes,
+// e.g. --install-component) and returns its combined output once it exits.
+// Shares the cached authorization with elevatedCommand, so it's at most one
+// admin prompt per app launch either way.
+func elevatedRun(args ...string) (string, error) {
+	_, file, err := executeSelfElevated(args)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	// Read to EOF (the child exiting closes its end). Deliberately no
+	// Wait4: the pid recovered via F_GETOWN isn't reliable (see
+	// authProc.Terminate), and waiting on a wrong pid could block on an
+	// unrelated child such as a running tunnel.
+	out, err := io.ReadAll(file)
+	return string(out), err
+}
+
+func executeSelfElevated(args []string) (int, *os.File, error) {
 	selfPath, err := os.Executable()
 	if err != nil {
-		return nil, nil, fmt.Errorf("resolving own executable path: %w", err)
+		return 0, nil, fmt.Errorf("resolving own executable path: %w", err)
 	}
-
-	fullArgs := append([]string{"--pty-exec", toolPath}, args...)
 
 	cToolPath := C.CString(selfPath)
 	defer C.free(unsafe.Pointer(cToolPath))
 
-	cArgs := make([]*C.char, len(fullArgs)+1)
-	for i, a := range fullArgs {
+	cArgs := make([]*C.char, len(args)+1)
+	for i, a := range args {
 		cArgs[i] = C.CString(a)
 	}
-	cArgs[len(fullArgs)] = nil
+	cArgs[len(args)] = nil
 	defer func() {
-		for _, a := range cArgs[:len(fullArgs)] {
+		for _, a := range cArgs[:len(args)] {
 			C.free(unsafe.Pointer(a))
 		}
 	}()
@@ -190,10 +217,11 @@ func elevatedCommand(name string, args ...string) (elevatedProc, func(), error) 
 	var fd C.int
 	rc := C.rp_execute(cToolPath, (**C.char)(unsafe.Pointer(&cArgs[0])), &pid, &fd)
 	authMu.Unlock()
-	if rc != 0 {
-		return nil, nil, fmt.Errorf("authorization failed or was cancelled (status %d)", int(rc))
+	if rc == errAuthorizationCanceled {
+		return 0, nil, errors.New("запрос прав администратора отменён")
 	}
-
-	proc := &authProc{pid: int(pid), file: os.NewFile(uintptr(fd), toolPath)}
-	return proc, func() {}, nil
+	if rc != 0 {
+		return 0, nil, fmt.Errorf("не удалось получить права администратора (status %d)", int(rc))
+	}
+	return int(pid), os.NewFile(uintptr(fd), selfPath), nil
 }

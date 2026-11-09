@@ -21,7 +21,10 @@
         <span class="add-icon">+</span> Добавить профиль
       </div>
       <div class="sidebar-footer">
-        <span class="link" id="aboutTrigger" title="О программе">Ingress</span>
+        <div class="sidebar-links">
+          <span class="link" id="aboutTrigger" title="О программе">Ingress</span>
+          <span class="link" id="componentsTrigger" title="VPN-клиенты, которые запускает Ingress">Компоненты</span>
+        </div>
         <div class="switch" id="themeToggle"><div class="knob"></div></div>
       </div>
     </div>
@@ -225,6 +228,18 @@
         <div class="otp-sub"><span class="link" id="aboutGithub"></span></div>
         <div class="otp-actions">
           <div class="btn primary" id="aboutCloseBtn">Закрыть</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="otp-overlay" id="componentsOverlay" hidden>
+      <div class="otp-modal components-modal">
+        <div class="otp-title">Компоненты</div>
+        <div class="otp-sub">VPN-клиенты, которые Ingress запускает для подключения. Ingress сам скачивает и устанавливает свои проверенные сборки, Homebrew не нужен.</div>
+        <div class="components-list" id="componentsList"></div>
+        <div class="otp-sub">Лицензии и исходники сборок: <span class="link" id="componentsSources">github.com/azizbekatajanov/ingress-deps</span></div>
+        <div class="otp-actions">
+          <div class="btn primary" id="componentsCloseBtn">Готово</div>
         </div>
       </div>
     </div>

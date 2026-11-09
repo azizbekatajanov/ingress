@@ -88,21 +88,21 @@ var (
 )
 
 type liveConnection struct {
-	mu         sync.Mutex
-	profileID  string
-	proc       elevatedProc
-	stdin      io.WriteCloser
-	cleanup    func()
-	status     Status
-	assignedIP string
-	iface      string
-	startedAt  time.Time
+	mu          sync.Mutex
+	profileID   string
+	proc        elevatedProc
+	stdin       io.WriteCloser
+	cleanup     func()
+	status      Status
+	assignedIP  string
+	iface       string
+	startedAt   time.Time
 	otpDeadline time.Time
-	logLines   []LogLine
-	lastError  string
-	rxBytes    uint64
-	txBytes    uint64
-	done       chan struct{}
+	logLines    []LogLine
+	lastError   string
+	rxBytes     uint64
+	txBytes     uint64
+	done        chan struct{}
 	// cancelling is set the moment the user asks to cancel/disconnect, before
 	// the process has actually exited. openfortivpn can still have a line or
 	// two already in flight on its stdout at that point (e.g. the OTP prompt,
@@ -118,15 +118,16 @@ type liveConnection struct {
 // profiles can be connected simultaneously and independently — the exact
 // thing the official FortiClient can't do, per the original complaint.
 type Manager struct {
-	ctx      context.Context
-	mu       sync.Mutex
-	conns    map[string]*liveConnection
-	store    *ProfileStore
-	onUpdate func(ConnectionSnapshot)
+	ctx        context.Context
+	mu         sync.Mutex
+	conns      map[string]*liveConnection
+	store      *ProfileStore
+	components *ComponentManager
+	onUpdate   func(ConnectionSnapshot)
 }
 
-func NewManager(ctx context.Context, store *ProfileStore) *Manager {
-	return &Manager{ctx: ctx, conns: make(map[string]*liveConnection), store: store}
+func NewManager(ctx context.Context, store *ProfileStore, components *ComponentManager) *Manager {
+	return &Manager{ctx: ctx, conns: make(map[string]*liveConnection), store: store, components: components}
 }
 
 // SetOnUpdate registers a callback (used to keep the tray icon in sync) fired
@@ -214,6 +215,10 @@ func (m *Manager) Connect(profileID string) error {
 	if profile.Host == "" {
 		return fmt.Errorf("profile has no host configured")
 	}
+	toolPath, err := m.components.ResolvePath("openfortivpn")
+	if err != nil {
+		return err
+	}
 	password, err := LoadPassword(profileID)
 	if err != nil {
 		return fmt.Errorf("reading password from keychain: %w", err)
@@ -225,7 +230,7 @@ func (m *Manager) Connect(profileID string) error {
 	}
 
 	target := fmt.Sprintf("%s:%s", profile.Host, profile.Port)
-	proc, elevateCleanup, err := elevatedCommand("openfortivpn", target, "--config="+cfgPath)
+	proc, elevateCleanup, err := elevatedCommand(toolPath, target, "--config="+cfgPath)
 	if err != nil {
 		os.Remove(cfgPath)
 		return err

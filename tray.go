@@ -72,7 +72,9 @@ func (t *Tray) toggle(profileID string) {
 	}
 	snap := t.app.manager.Snapshot(profileID)
 	if snap.Status == StatusDisconnected {
-		_ = t.app.manager.Connect(profileID)
+		if err := t.app.manager.Connect(profileID); err != nil {
+			t.app.reportConnectError(profileID, err)
+		}
 	} else {
 		_ = t.app.manager.Disconnect(profileID)
 	}

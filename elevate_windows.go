@@ -14,10 +14,15 @@ import "errors"
 // needs a named-pipe (or local TCP) bridge between the unelevated GUI and the
 // elevated openfortivpn process, which is a separate, non-trivial piece of
 // work — tracked as a follow-up, not silently faked here.
-func elevatedCommand(name string, args ...string) (elevatedProc, func(), error) {
+func elevatedCommand(toolPath string, args ...string) (elevatedProc, func(), error) {
 	return nil, nil, errors.New("windows privilege elevation with live stdio is not implemented yet")
 }
 
 // runPtyExec is a no-op stub here — see ptyproxy_darwin.go; this hidden
 // re-exec mode is specific to a macOS AuthorizationExecuteWithPrivileges quirk.
 func runPtyExec(args []string) {}
+
+// elevatedRun: see elevatedCommand — not implemented on Windows yet.
+func elevatedRun(args ...string) (string, error) {
+	return "", errors.New("windows privilege elevation is not implemented yet")
+}

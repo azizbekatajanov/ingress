@@ -14,6 +14,7 @@ type App struct {
 	ctx           context.Context
 	store         *ProfileStore
 	manager       *Manager
+	components    *ComponentManager
 	tray          *Tray
 	quitConfirmed bool
 }
@@ -30,7 +31,8 @@ func (a *App) startup(ctx context.Context) {
 		log.Fatalf("ingress: failed to open profile store: %v", err)
 	}
 	a.store = store
-	a.manager = NewManager(ctx, store)
+	a.components = NewComponentManager(store)
+	a.manager = NewManager(ctx, store, a.components)
 	if a.tray != nil {
 		a.manager.SetOnUpdate(a.tray.OnConnectionUpdate)
 	}
@@ -118,6 +120,15 @@ func (a *App) Connect(profileID string) error {
 	return a.manager.Connect(profileID)
 }
 
+// reportConnectError surfaces a Connect error that happened outside the
+// window (tray menu) — e.g. the component isn't installed — instead of it
+// being silently dropped.
+func (a *App) reportConnectError(profileID string, err error) {
+	wailsRuntime.WindowShow(a.ctx)
+	wailsRuntime.WindowUnminimise(a.ctx)
+	wailsRuntime.EventsEmit(a.ctx, "connect:error", map[string]string{"profileId": profileID, "message": err.Error()})
+}
+
 func (a *App) Disconnect(profileID string) error {
 	return a.manager.Disconnect(profileID)
 }
@@ -134,14 +145,30 @@ func (a *App) GetSnapshot(profileID string) ConnectionSnapshot {
 	return a.manager.Snapshot(profileID)
 }
 
-// --- openfortivpn install/version ---
+// --- Components (openfortivpn / openconnect binaries, see components.go) ---
 
-func (a *App) CheckOpenfortivpn() BinaryStatus {
-	return CheckOpenfortivpn()
+func (a *App) GetComponents() []ComponentStatus {
+	return a.components.List()
 }
 
-func (a *App) InstallOpenfortivpn() error {
-	return InstallOpenfortivpnViaBrew()
+// InstallComponent downloads and installs Ingress' own build of a component.
+// Progress is pushed as "component:progress" events; "components:changed"
+// fires when it finishes either way so every view refreshes.
+func (a *App) InstallComponent(name string) error {
+	defer wailsRuntime.EventsEmit(a.ctx, "components:changed")
+	return a.components.Install(a.ctx, name, func(p ComponentProgress) {
+		wailsRuntime.EventsEmit(a.ctx, "component:progress", p)
+	})
+}
+
+func (a *App) RemoveComponent(name string) error {
+	defer wailsRuntime.EventsEmit(a.ctx, "components:changed")
+	return a.components.Remove(name)
+}
+
+func (a *App) SetComponentOverride(name, path string) error {
+	defer wailsRuntime.EventsEmit(a.ctx, "components:changed")
+	return a.components.SetOverride(name, path)
 }
 
 // --- File picker (for cert/key "Обзор…" fields) ---

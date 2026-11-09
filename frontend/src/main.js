@@ -2,7 +2,7 @@ import {
   GetProfiles, GetSelectedProfileID, SelectProfile, AddProfile, UpdateProfile, RemoveProfile,
   GetPassword, SetPassword, GetTheme, SetTheme,
   Connect, Disconnect, CancelConnect, SubmitOtp, GetSnapshot,
-  CheckOpenfortivpn, InstallOpenfortivpn, BrowseFile,
+  GetComponents, InstallComponent, RemoveComponent, SetComponentOverride, BrowseFile,
   PickProfileLogo, RemoveProfileLogo, GetProfileLogos,
   WindowMinimise, WindowToggleFullscreen, HideWindow, ConfirmQuit,
   GetAppInfo,
@@ -22,7 +22,9 @@ const state = {
   snapshots: {}, // profileId -> ConnectionSnapshot from the Go backend
   passwords: {}, // profileId -> cached password (fetched from keychain on demand)
   logos: {}, // profileId -> data: URL of the uploaded logo
-  binaryStatus: null,
+  components: [], // ComponentStatus[] from components.go
+  componentProgress: {}, // name -> {phase, done, total} while installing/removing
+  componentErrors: {}, // name -> last install/remove/override error message
   appInfo: null,
 };
 
@@ -54,7 +56,7 @@ function formatBytes(n) {
 
 // ---- backend-driven actions ----
 async function startConnect(id) {
-  try { await Connect(id); } catch (e) { alert('Не удалось подключиться: ' + e); }
+  try { await Connect(id); } catch (e) { alert('Не удалось подключиться: ' + errText(e)); }
 }
 async function cancelConnect(id) { try { await CancelConnect(id); } catch (e) { /* ignore */ } }
 async function disconnect(id) { try { await Disconnect(id); } catch (e) { /* ignore */ } }
@@ -217,7 +219,7 @@ function render() {
     paintAvatar($('#overviewAvatar'), sp, PROFILE_COLORS[selIdx % PROFILE_COLORS.length]);
     $('#overviewName').textContent = sp.name;
     $('#overviewHost').textContent = sp.host ? `${sp.host}:${sp.port}` : 'не настроен';
-    renderInstallBanner();
+    renderInstallBanner(sp);
     renderErrorBanner(snap);
   }
   if (showConnecting) $('#connectingTitle').textContent = `Подключение к ${sp.host}:${sp.port}…`;
@@ -240,6 +242,8 @@ function render() {
 
   // theme switch
   $('#themeToggle').classList.toggle('on', state.theme === 'dark');
+
+  if (!$('#componentsOverlay').hidden) renderComponents();
 }
 
 function renderErrorBanner(snap) {
@@ -249,23 +253,196 @@ function renderErrorBanner(snap) {
   host.appendChild(el('div', 'banner error', `Не удалось подключиться: ${snap.lastError}`));
 }
 
-function renderInstallBanner() {
+// ---- components (openfortivpn / openconnect binaries) ----
+const SOURCE_LABELS = { managed: 'встроенная сборка', override: 'свой путь', system: 'системный' };
+
+function componentByName(name) { return state.components.find(c => c.name === name); }
+// Phase 2 adds profile types; until then every profile is Fortinet.
+function componentForProfile(p) { return 'openfortivpn'; }
+
+// Wails rejects bound-method promises with an Error whose message is the Go
+// error text; String(e) would prefix it with "Error: ".
+function errText(e) { return (e && e.message) ? e.message : String(e); }
+
+async function refreshComponents() {
+  try { state.components = await GetComponents(); } catch (e) { /* keep the previous list */ }
+  render();
+}
+
+async function runComponentAction(name, action) {
+  state.componentErrors[name] = '';
+  state.componentProgress[name] = { phase: action === 'remove' ? 'install' : 'download', done: 0, total: -1 };
+  render();
+  try {
+    if (action === 'remove') await RemoveComponent(name);
+    else await InstallComponent(name);
+  } catch (e) {
+    state.componentErrors[name] = errText(e);
+  } finally {
+    delete state.componentProgress[name];
+    await refreshComponents();
+  }
+}
+
+async function setComponentOverride(name, path) {
+  state.componentErrors[name] = '';
+  try { await SetComponentOverride(name, path); } catch (e) { state.componentErrors[name] = errText(e); }
+  await refreshComponents();
+}
+
+function progressText(c, pr) {
+  if (pr.phase === 'download') {
+    return pr.total > 0
+      ? `Загрузка ${c.title}… ${Math.round(pr.done / pr.total * 100)}%`
+      : `Загрузка ${c.title}… ${formatBytes(pr.done)}`;
+  }
+  return 'Подтвердите действие паролем администратора…';
+}
+function progressBar(pr) {
+  const bar = el('div', 'progress');
+  const fill = el('div', 'progress-fill');
+  if (pr.phase === 'download' && pr.total > 0) fill.style.width = Math.round(pr.done / pr.total * 100) + '%';
+  else fill.classList.add('indeterminate');
+  bar.appendChild(fill);
+  return bar;
+}
+function actionBtn(cls, text, onclick) {
+  const b = el('div', 'btn ' + cls, text);
+  b.onclick = onclick;
+  return b;
+}
+
+// Banner on the profile overview: what's needed to connect this profile.
+function renderInstallBanner(p) {
   const host = $('#installBanner');
   host.innerHTML = '';
-  if (!state.binaryStatus) return;
-  if (!state.binaryStatus.installed) {
-    const b = el('div', 'banner');
-    b.textContent = 'openfortivpn не найден. ';
-    const btn = document.createElement('span');
-    btn.className = 'btn primary'; btn.textContent = 'Установить через Homebrew';
-    btn.style.marginLeft = '8px';
-    btn.onclick = async () => { btn.textContent = 'Установка…'; await InstallOpenfortivpn().catch(() => {}); state.binaryStatus = await CheckOpenfortivpn(); render(); };
-    b.appendChild(btn);
+  const c = componentByName(componentForProfile(p));
+  if (!c) return;
+  const pr = state.componentProgress[c.name];
+  const err = state.componentErrors[c.name];
+
+  if (pr) {
+    const b = el('div', 'banner', progressText(c, pr));
+    b.appendChild(progressBar(pr));
     host.appendChild(b);
-  } else if (state.binaryStatus.warning) {
-    const b = el('div', 'banner error', state.binaryStatus.warning);
+    return;
+  }
+
+  let b = null;
+  const actions = el('div', 'banner-actions');
+  if (!c.activeSource) {
+    if (c.broken) {
+      b = el('div', 'banner error', `Встроенный ${c.title} не прошёл проверку целостности (${c.broken}) и не будет запущен.`);
+      if (c.available) actions.appendChild(actionBtn('primary', 'Переустановить', () => runComponentAction(c.name, 'install')));
+    } else if (c.available) {
+      b = el('div', 'banner', `Для подключения к ${c.vpn} нужен ${c.title}. Ingress скачает проверенную сборку ${c.latestVersion} и попросит пароль администратора для установки.`);
+      actions.appendChild(actionBtn('primary', `Установить ${c.title}`, () => runComponentAction(c.name, 'install')));
+    } else {
+      b = el('div', 'banner error', `Для подключения к ${c.vpn} нужен ${c.title}, но готовой сборки для этой системы пока нет. Укажите путь к своему ${c.title} в «Компоненты».`);
+    }
+    if (!c.available || c.broken) actions.appendChild(actionBtn('neutral', 'Компоненты', showComponents));
+  } else if (c.activeSource === 'system') {
+    // 1.0.x users (or anyone with a brew/apt install): never block them,
+    // offer the switch to the pinned build.
+    const intro = `Найден системный ${c.title} ${c.systemVersion || ''} (${c.systemPath}).`;
+    const tail = c.available
+      ? ` Ingress теперь ставит собственную проверенную сборку ${c.latestVersion}, но может продолжить использовать системную.`
+      : ' Встроенной сборки для этой системы пока нет, используется системный.';
+    b = el('div', c.warning ? 'banner error' : 'banner', intro + tail + (c.warning ? ' ' + c.warning : ''));
+    if (c.available) actions.appendChild(actionBtn('primary', 'Установить встроенный', () => runComponentAction(c.name, 'install')));
+    actions.appendChild(actionBtn('neutral', 'Использовать системный', () => setComponentOverride(c.name, c.systemPath)));
+  } else if (c.warning) {
+    b = el('div', 'banner error', c.warning);
+    if (c.available) actions.appendChild(actionBtn('primary', 'Установить встроенный', async () => {
+      await setComponentOverride(c.name, '');
+      await runComponentAction(c.name, 'install');
+    }));
+  }
+
+  if (b) {
+    if (actions.childElementCount) b.appendChild(actions);
     host.appendChild(b);
   }
+  if (err) host.appendChild(el('div', 'banner error', err));
+}
+
+// ---- Компоненты screen ----
+function showComponents() {
+  $('#componentsOverlay').hidden = false;
+  refreshComponents();
+}
+
+function componentState(c) {
+  if (state.componentProgress[c.name]) return ['Установка…', 'warn'];
+  if (c.broken) return ['Повреждён', 'bad'];
+  if (!c.activeSource) return ['Не установлен', 'bad'];
+  if (c.warning) return ['Проблемная версия', 'bad'];
+  if (c.activeSource === 'managed') return [c.updateAvailable ? 'Есть обновление' : 'Установлен', c.updateAvailable ? 'warn' : 'ok'];
+  return [c.activeSource === 'override' ? 'Свой путь' : 'Системный', 'warn'];
+}
+
+function renderComponents() {
+  const list = $('#componentsList');
+  // Don't rebuild while the user is typing a path: it would drop focus.
+  if (list.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
+  list.innerHTML = '';
+  state.components.forEach(c => {
+    const row = el('div', 'component-row');
+    const head = el('div', 'component-head');
+    const name = el('div', 'component-name', c.title);
+    name.appendChild(Object.assign(document.createElement('span'), { className: 'component-vpn', textContent: c.vpn }));
+    const [label, cls] = componentState(c);
+    head.appendChild(name);
+    head.appendChild(el('div', 'component-state ' + cls, label));
+    row.appendChild(head);
+
+    if (c.activePath) {
+      const ver = c.activeSource === 'managed' ? c.installedVersion : (c.activeSource === 'override' ? c.overrideVersion : c.systemVersion);
+      row.appendChild(el('div', 'component-line', `Используется: ${c.activePath}${ver ? ' · ' + ver : ''} (${SOURCE_LABELS[c.activeSource]})`));
+    }
+    if (c.installed) row.appendChild(el('div', 'component-line', `Встроенная сборка ${c.installedVersion} установлена${c.updateAvailable ? `, доступна ${c.latestVersion}` : ''}.`));
+    else if (c.available) row.appendChild(el('div', 'component-line', `Встроенная сборка ${c.latestVersion} доступна для установки.`));
+    else row.appendChild(el('div', 'component-line', 'Встроенной сборки для этой системы пока нет.'));
+    if (c.override && (c.installed || c.available)) row.appendChild(el('div', 'component-line', 'Пока задан свой путь, встроенная сборка не используется — нажмите «Сбросить», чтобы переключиться на неё.'));
+    if (c.broken) row.appendChild(el('div', 'component-line error', `Проверка целостности не пройдена: ${c.broken}`));
+    if (c.warning) row.appendChild(el('div', 'component-line warning', c.warning));
+
+    const pr = state.componentProgress[c.name];
+    if (pr) {
+      row.appendChild(el('div', 'component-line', progressText(c, pr)));
+      row.appendChild(progressBar(pr));
+    } else {
+      const actions = el('div', 'component-actions');
+      if (c.available) {
+        const text = !c.installed ? 'Установить' : (c.updateAvailable ? 'Обновить' : 'Переустановить');
+        actions.appendChild(actionBtn(c.installed && !c.updateAvailable && !c.broken ? 'neutral' : 'primary', text, () => runComponentAction(c.name, 'install')));
+      }
+      if (c.installed) actions.appendChild(actionBtn('neutral', 'Удалить', () => runComponentAction(c.name, 'remove')));
+      if (actions.childElementCount) row.appendChild(actions);
+    }
+
+    row.appendChild(el('div', 'component-label', 'Свой путь (необязательно)'));
+    const ov = el('div', 'component-override');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = c.systemPath || `/путь/к/${c.name}`;
+    input.value = c.override || '';
+    const commit = () => { if (input.value.trim() !== (c.override || '')) setComponentOverride(c.name, input.value.trim()); };
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
+    input.addEventListener('blur', commit);
+    ov.appendChild(input);
+    ov.appendChild(actionBtn('neutral', 'Обзор…', async () => {
+      const path = await BrowseFile(`Выберите исполняемый файл ${c.name}`).catch(() => '');
+      if (path) setComponentOverride(c.name, path);
+    }));
+    if (c.override) ov.appendChild(actionBtn('neutral', 'Сбросить', () => setComponentOverride(c.name, '')));
+    row.appendChild(ov);
+    if (c.overrideError) row.appendChild(el('div', 'component-line error', `Свой путь не работает: ${c.overrideError}`));
+
+    const err = state.componentErrors[c.name];
+    if (err) row.appendChild(el('div', 'component-line error', err));
+    list.appendChild(row);
+  });
 }
 
 function fillForm(p) {
@@ -412,6 +589,11 @@ $('#aboutGithub').onclick = () => {
   if (state.appInfo && state.appInfo.githubUrl) BrowserOpenURL(state.appInfo.githubUrl);
 };
 
+// ---- components ----
+$('#componentsTrigger').onclick = showComponents;
+$('#componentsCloseBtn').onclick = () => { $('#componentsOverlay').hidden = true; };
+$('#componentsSources').onclick = () => BrowserOpenURL('https://github.com/azizbekatajanov/ingress-deps');
+
 // ---- quit confirmation ----
 $('#quitCancelBtn').onclick = () => { $('#quitOverlay').hidden = true; };
 $('#quitConfirmBtn').onclick = () => {
@@ -428,6 +610,22 @@ EventsOn('quit:confirm', () => {
   $('#quitOverlay').hidden = false;
 });
 EventsOn('about:show', showAbout);
+EventsOn('component:progress', (p) => {
+  if (!state.componentProgress[p.name]) return; // not started from this window
+  state.componentProgress[p.name] = p;
+  render();
+});
+EventsOn('components:changed', refreshComponents);
+// Connect failed before a tunnel even started (e.g. the component isn't
+// installed) while triggered from the tray — show it instead of dropping it.
+EventsOn('connect:error', ({ profileId, message }) => {
+  if (state.profiles.some(p => p.id === profileId)) {
+    state.selectedProfileId = profileId;
+    state.showSettings = false;
+  }
+  render();
+  setTimeout(() => alert('Не удалось подключиться: ' + message), 0);
+});
 // Fired by Manager.finish (vpn_manager.go) right when a connection attempt
 // fails — jumps to the profile that failed so its overview + error banner
 // is what's actually on screen once the window comes forward, rather than
@@ -442,14 +640,14 @@ EventsOn('profile:failed', (profileId) => {
 
 // ---- startup ----
 async function init() {
-  const [profiles, selectedId, theme, binaryStatus, appInfo, logos] = await Promise.all([
-    GetProfiles(), GetSelectedProfileID(), GetTheme(), CheckOpenfortivpn(), GetAppInfo(), GetProfileLogos(),
+  const [profiles, selectedId, theme, components, appInfo, logos] = await Promise.all([
+    GetProfiles(), GetSelectedProfileID(), GetTheme(), GetComponents(), GetAppInfo(), GetProfileLogos(),
   ]);
   state.logos = logos || {};
   state.profiles = profiles;
   state.selectedProfileId = selectedId || (profiles[0] && profiles[0].id);
   state.theme = theme;
-  state.binaryStatus = binaryStatus;
+  state.components = components || [];
   state.appInfo = appInfo;
   await Promise.all(profiles.map(p => GetSnapshot(p.id).then(s => { state.snapshots[p.id] = s; })));
   render();
