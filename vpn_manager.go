@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -15,7 +14,7 @@ import (
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// elevatedProc abstracts over how a privileged openfortivpn process is
+// elevatedProc abstracts over how a privileged VPN client process is
 // actually spawned per OS. Linux/Windows wrap *exec.Cmd (pkexec / unimplemented,
 // respectively); macOS is different in kind, not just detail — it's built on
 // Security.framework's AuthorizationExecuteWithPrivileges (see elevate_darwin.go),
@@ -64,33 +63,28 @@ type ConnectionSnapshot struct {
 
 const otpWindow = 60 * time.Second
 
-// Heuristic detectors for openfortivpn/pppd's stdout+stderr. openfortivpn has
-// no machine-readable status output, so state transitions are inferred from
-// its human-readable log lines — these patterns are a best-effort v1 and may
-// need tuning against a real gateway's exact wording.
+// What each output line means is the backend's business (see vpn_backend.go);
+// only protocol-independent cleanup lives here.
 var (
-	otpPromptRe = regexp.MustCompile(`(?i)(one-time|otp|two-factor|2fa|verification code|token code)`)
-	ipAssignRe  = regexp.MustCompile(`(?i)local\s+ip\s+address\s+([0-9.]+)`)
-	ifaceUpRe   = regexp.MustCompile(`(?i)interface\s+(\S+)\s+is\s+up`)
-	errorLineRe = regexp.MustCompile(`(?i)^\s*ERROR:\s*(.+)$`)
 	// ansiEscapeRe strips ANSI SGR color codes (e.g. "\x1b[0;0m") that
 	// openfortivpn/pppd intersperse in their output — confirmed live:
 	// "\x1b[0;0mERROR:  Could not authenticate..." failed to match
-	// errorLineRe's ^-anchored pattern (a terminal renders the escape as
+	// the ^-anchored ERROR: pattern (a terminal renders the escape as
 	// color, not visible text, which is why the raw log looked clean when
 	// eyeballed but the regex saw a line that didn't start with "ERROR:").
 	// Applied to every line before any other regex runs, in pump below.
 	ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
-	// Matches the one-line form of openfortivpn's untrusted-gateway-cert
-	// error ("...rerun with:\n    --trusted-cert <sha256>"), which is easier
-	// to parse reliably than the multi-line "sha256 digest:\n    <hash>" block.
-	untrustedCertRe = regexp.MustCompile(`--trusted-cert\s+([0-9a-f]{64})`)
 )
 
 type liveConnection struct {
-	mu          sync.Mutex
-	profileID   string
-	proc        elevatedProc
+	mu        sync.Mutex
+	profileID string
+	backend   vpnBackend
+	proc      elevatedProc
+	// redact is a secret written to the client's stdin (see
+	// backendLaunch.Stdin). The pty echoes stdin back into the output, so
+	// any line containing it is masked before it reaches the log.
+	redact      string
 	stdin       io.WriteCloser
 	cleanup     func()
 	status      Status
@@ -114,11 +108,14 @@ type liveConnection struct {
 	cancelling bool
 }
 
-// Manager owns one openfortivpn subprocess per connected profile, so multiple
+// Manager owns one VPN client subprocess per connected profile, so multiple
 // profiles can be connected simultaneously and independently — the exact
 // thing the official FortiClient can't do, per the original complaint.
 type Manager struct {
-	ctx        context.Context
+	ctx context.Context
+	// events sends a frontend event; swapped out in tests (the Wails runtime
+	// needs a live app context).
+	events     func(name string, data ...interface{})
 	mu         sync.Mutex
 	conns      map[string]*liveConnection
 	store      *ProfileStore
@@ -127,7 +124,13 @@ type Manager struct {
 }
 
 func NewManager(ctx context.Context, store *ProfileStore, components *ComponentManager) *Manager {
-	return &Manager{ctx: ctx, conns: make(map[string]*liveConnection), store: store, components: components}
+	return &Manager{
+		ctx:        ctx,
+		events:     func(name string, data ...interface{}) { wailsRuntime.EventsEmit(ctx, name, data...) },
+		conns:      make(map[string]*liveConnection),
+		store:      store,
+		components: components,
+	}
 }
 
 // SetOnUpdate registers a callback (used to keep the tray icon in sync) fired
@@ -179,7 +182,7 @@ func (m *Manager) emit(conn *liveConnection) {
 	conn.mu.Lock()
 	snap := conn.snapshotLocked()
 	conn.mu.Unlock()
-	wailsRuntime.EventsEmit(m.ctx, "vpn:update", snap)
+	m.events("vpn:update", snap)
 	if m.onUpdate != nil {
 		m.onUpdate(snap)
 	}
@@ -195,9 +198,9 @@ func (c *liveConnection) addLog(text string) {
 	log.Printf("[%s] %s", c.profileID, text)
 }
 
-// Connect spawns openfortivpn for the given profile, elevated, with its
-// credentials passed via a private 0600 temp config file (never on argv,
-// where they'd be visible to `ps`).
+// Connect spawns the profile's VPN client (see backendFor), elevated.
+// Credentials never go on argv, where they'd be visible to `ps` — each
+// backend passes them via a private temp file or stdin.
 func (m *Manager) Connect(profileID string) error {
 	if existing := m.get(profileID); existing != nil {
 		existing.mu.Lock()
@@ -215,11 +218,11 @@ func (m *Manager) Connect(profileID string) error {
 	if profile.Host == "" {
 		return fmt.Errorf("profile has no host configured")
 	}
-	if profile.Type != ProfileTypeFortinet {
-		// Phase 4 of design/v2-plan.md wires GlobalProtect up to openconnect.
-		return fmt.Errorf("подключение GlobalProtect пока не реализовано")
+	backend, err := backendFor(profile.Type)
+	if err != nil {
+		return err
 	}
-	toolPath, err := m.components.ResolvePath(componentForProfileType(profile.Type))
+	toolPath, err := m.components.ResolvePath(backend.Component())
 	if err != nil {
 		return err
 	}
@@ -228,31 +231,37 @@ func (m *Manager) Connect(profileID string) error {
 		return fmt.Errorf("reading password from keychain: %w", err)
 	}
 
-	cfgPath, err := writeOpenfortivpnConfig(profile, password)
+	launch, err := backend.Prepare(profile, password)
 	if err != nil {
-		return fmt.Errorf("writing config: %w", err)
+		return err
+	}
+	cleanupLaunch := func() {
+		if launch.Cleanup != nil {
+			launch.Cleanup()
+		}
 	}
 
-	target := fmt.Sprintf("%s:%s", profile.Host, profile.Port)
-	proc, elevateCleanup, err := elevatedCommand(toolPath, target, "--config="+cfgPath)
+	proc, elevateCleanup, err := elevatedCommand(toolPath, launch.Args...)
 	if err != nil {
-		os.Remove(cfgPath)
+		cleanupLaunch()
 		return err
 	}
 
 	conn := &liveConnection{
 		profileID: profileID,
+		backend:   backend,
 		proc:      proc,
 		stdin:     proc.Stdin(),
+		redact:    launch.Stdin,
 		status:    StatusConnecting,
 		startedAt: time.Now(),
 		done:      make(chan struct{}),
 		cleanup: func() {
 			elevateCleanup()
-			os.Remove(cfgPath)
+			cleanupLaunch()
 		},
 	}
-	conn.addLog(fmt.Sprintf("Подключение к %s...", target))
+	conn.addLog(fmt.Sprintf("Подключение к %s...", launch.Target))
 
 	m.mu.Lock()
 	m.conns[profileID] = conn
@@ -264,6 +273,11 @@ func (m *Manager) Connect(profileID string) error {
 		delete(m.conns, profileID)
 		m.mu.Unlock()
 		return err
+	}
+	if launch.Stdin != "" {
+		if _, err := io.WriteString(conn.stdin, launch.Stdin+"\n"); err != nil {
+			conn.addLog(fmt.Sprintf("Не удалось передать данные клиенту: %v", err))
+		}
 	}
 
 	go m.pump(conn, proc.Stdout())
@@ -317,6 +331,9 @@ func (m *Manager) pump(conn *liveConnection, r io.Reader) {
 
 	emit := func(raw []byte) {
 		line := ansiEscapeRe.ReplaceAllString(strings.TrimRight(string(raw), "\r\n"), "")
+		if conn.redact != "" && strings.Contains(line, conn.redact) {
+			line = strings.ReplaceAll(line, conn.redact, "••••••")
+		}
 		conn.addLog(line)
 		m.handleLine(conn, line)
 	}
@@ -355,69 +372,73 @@ func (m *Manager) pump(conn *liveConnection, r io.Reader) {
 	}
 }
 
+// handleLine applies what the backend reads into one output line to the
+// connection's state.
 func (m *Manager) handleLine(conn *liveConnection, line string) {
 	conn.mu.Lock()
 	status := conn.status
 	cancelling := conn.cancelling
 	conn.mu.Unlock()
 
-	if match := errorLineRe.FindStringSubmatch(line); match != nil {
-		conn.mu.Lock()
-		conn.lastError = match[1]
-		conn.mu.Unlock()
-	}
-
-	// openfortivpn refuses an unrecognized gateway cert and prints the exact
-	// --trusted-cert value that would fix it. Auto-fill it into the profile
-	// (but don't auto-reconnect — trusting a cert is a deliberate action,
-	// this just saves copy-pasting the hash by hand) so the next click on
-	// "Подключить" succeeds.
-	if match := untrustedCertRe.FindStringSubmatch(line); match != nil {
-		if profile, ok := m.store.Get(conn.profileID); ok && profile.Fortinet != nil && profile.Fortinet.TrustedCert == "" {
-			profile.Fortinet.TrustedCert = match[1]
-			if err := m.store.Update(profile); err == nil {
-				conn.addLog("Сертификат шлюза сохранён как доверенный (trusted-cert) — нажмите «Подключить» ещё раз")
-			}
-		}
-	}
-
-	if !cancelling && status == StatusConnecting && otpPromptRe.MatchString(line) {
-		conn.mu.Lock()
-		conn.status = StatusOtp
-		conn.otpDeadline = time.Now().Add(otpWindow)
-		conn.mu.Unlock()
-		conn.addLog("Требуется одноразовый код (2FA)")
-		m.emit(conn)
-		return
-	}
-
 	promoted := false
-	if match := ipAssignRe.FindStringSubmatch(line); match != nil {
-		conn.mu.Lock()
-		conn.assignedIP = match[1]
-		if conn.iface == "" {
-			conn.iface = "ppp0"
+	for _, ev := range conn.backend.Parse(line) {
+		switch ev.Kind {
+		case evError:
+			conn.mu.Lock()
+			conn.lastError = ev.Value
+			conn.mu.Unlock()
+
+		case evServerCert:
+			if profile, ok := m.store.Get(conn.profileID); ok {
+				if msg := conn.backend.SaveServerCert(&profile, ev.Value); msg != "" {
+					if err := m.store.Update(profile); err == nil {
+						conn.addLog(msg)
+						// The frontend holds its own copy of the profile; without
+						// this its next debounced save would write the old (empty)
+						// value back over the one just stored.
+						if saved, ok := m.store.Get(conn.profileID); ok {
+							m.events("profile:updated", saved)
+						}
+					}
+				}
+			}
+
+		case evPrompt:
+			if !cancelling && status == StatusConnecting && ev.Prompt == PromptOTP {
+				conn.mu.Lock()
+				conn.status = StatusOtp
+				conn.otpDeadline = time.Now().Add(otpWindow)
+				conn.mu.Unlock()
+				conn.addLog("Требуется одноразовый код (2FA)")
+				m.emit(conn)
+				return
+			}
+
+		case evAssignedIP:
+			conn.mu.Lock()
+			conn.assignedIP = ev.Value
+			if conn.iface == "" {
+				conn.iface = conn.backend.DefaultInterface()
+			}
+			promoted = promoted || (!cancelling && conn.status != StatusConnected)
+			conn.mu.Unlock()
+			conn.addLog(fmt.Sprintf("Назначен IP-адрес: %s", ev.Value))
+
+		case evInterfaceUp:
+			conn.mu.Lock()
+			conn.iface = ev.Value
+			promoted = promoted || (!cancelling && conn.status != StatusConnected)
+			conn.mu.Unlock()
 		}
-		promoted = !cancelling && conn.status != StatusConnected
-		conn.mu.Unlock()
-		conn.addLog(fmt.Sprintf("Назначен IP-адрес: %s", match[1]))
 	}
-	if match := ifaceUpRe.FindStringSubmatch(line); match != nil {
-		conn.mu.Lock()
-		conn.iface = match[1]
-		promoted = !cancelling && conn.status != StatusConnected
-		conn.mu.Unlock()
-	}
+
 	if promoted {
 		conn.mu.Lock()
 		conn.status = StatusConnected
 		conn.startedAt = time.Now()
 		conn.mu.Unlock()
 		conn.addLog("Туннель установлен")
-		m.emit(conn)
-		return
 	}
-
 	m.emit(conn)
 }
 
@@ -489,13 +510,13 @@ func (m *Manager) finish(conn *liveConnection) {
 	// persist a dangling selectedProfileId and blank the UI.
 	if _, exists := m.store.Get(conn.profileID); exists && lastError != "" && !cancelling {
 		m.store.SetSelectedID(conn.profileID)
-		wailsRuntime.EventsEmit(m.ctx, "profile:failed", conn.profileID)
+		m.events("profile:failed", conn.profileID)
 		wailsRuntime.WindowShow(m.ctx)
 		wailsRuntime.WindowUnminimise(m.ctx)
 	}
 }
 
-// SubmitOtp writes the user's 2FA code to openfortivpn's stdin, exactly where
+// SubmitOtp writes the user's 2FA code to the client's stdin, exactly where
 // it's waiting to read it.
 func (m *Manager) SubmitOtp(profileID, code string) error {
 	conn := m.get(profileID)
@@ -515,8 +536,8 @@ func (m *Manager) SubmitOtp(profileID, code string) error {
 	return err
 }
 
-// CancelConnect and Disconnect both terminate the elevated openfortivpn
-// process gracefully; awaitExit reconciles state once it actually exits.
+// CancelConnect and Disconnect both terminate the elevated client process
+// gracefully; finish reconciles state once it actually exits.
 func (m *Manager) CancelConnect(profileID string) error {
 	return m.terminate(profileID)
 }

@@ -659,6 +659,16 @@ EventsOn('component:progress', (p) => {
   render();
 });
 EventsOn('components:changed', refreshComponents);
+// The backend changed a profile on its own (e.g. auto-filled the gateway
+// certificate after an untrusted-cert error). Take its copy, or this
+// window's next debounced save would write the stale one back.
+EventsOn('profile:updated', (updated) => {
+  const i = state.profiles.findIndex(p => p.id === updated.id);
+  if (i < 0) return;
+  clearTimeout(saveTimers[updated.id]);
+  state.profiles[i] = updated;
+  render();
+});
 // Connect failed before a tunnel even started (e.g. the component isn't
 // installed) while triggered from the tray — show it instead of dropping it.
 EventsOn('connect:error', ({ profileId, message }) => {
