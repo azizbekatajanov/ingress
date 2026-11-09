@@ -1,12 +1,11 @@
-//go:build !darwin
+//go:build !darwin && !(linux && cgo)
 
 package main
 
 import "errors"
 
-// runSAMLWindow: the SAML login window is implemented for macOS only so far
-// (saml_darwin.go). On Linux it needs a WebKitGTK window — see
-// design/v2-plan.md, phase 5.
+// runSAMLWindow: no native SAML window on this platform/build (Windows, or
+// a Linux build without cgo — which Wails can't produce anyway).
 func runSAMLWindow(samlRequest) error {
-	return errors.New("SAML-вход пока поддерживается только на macOS")
+	return errors.New("SAML-вход на этой платформе не поддерживается")
 }
