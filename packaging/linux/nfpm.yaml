@@ -9,17 +9,26 @@ version: ${VERSION}
 maintainer: Azizbek Atajanov
 homepage: https://github.com/azizbekatajanov/ingress
 description: |
-  Менеджер нескольких одновременных VPN-туннелей openfortivpn (FortiGate SSL-VPN).
-  Держит несколько профилей подключёнными одновременно — то, чего не умеет
-  официальный FortiClient.
+  Менеджер нескольких одновременных VPN-туннелей: Fortinet SSL-VPN и
+  Palo Alto GlobalProtect (включая вход через SAML). Держит несколько
+  профилей подключёнными одновременно. VPN-клиенты (openfortivpn,
+  OpenConnect) Ingress скачивает и проверяет сам при первом подключении.
 section: net
 priority: optional
 depends:
-  - policykit-1
+  # Debian 13 / Ubuntu 24.04+ split policykit-1 into polkitd + pkexec and
+  # (Debian) dropped the old name; accept either.
+  - pkexec | policykit-1
   - libwebkit2gtk-4.1-0
   - libgtk-3-0
+recommends:
+  # openfortivpn (Fortinet profiles) drives the system pppd; GlobalProtect
+  # (openconnect) doesn't need it. iproute2 is what vpnc-script uses.
+  - ppp
+  - iproute2
 scripts:
   postinstall: ./postinst.sh
+  postremove: ./postrm.sh
 contents:
   - src: ../../build/bin/ingress
     dst: /usr/bin/ingress

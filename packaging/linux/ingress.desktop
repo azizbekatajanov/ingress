@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Ingress
-Comment=Менеджер нескольких одновременных VPN-туннелей openfortivpn
+Comment=Менеджер нескольких одновременных VPN-туннелей: Fortinet и GlobalProtect
 Exec=ingress
 Icon=ingress
 Terminal=false
