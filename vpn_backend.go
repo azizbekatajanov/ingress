@@ -63,6 +63,11 @@ type backendLaunch struct {
 	// for openconnect's --passwd-on-stdin). Never put secrets in Args: argv
 	// is world-readable via ps.
 	Stdin string
+	// PromptReplies answers specific client prompts (trimmed prompt text →
+	// reply) automatically, each at most once; a repeat of the same prompt
+	// goes to Parse like any other. Replies are secrets: they're masked in
+	// the log like Stdin.
+	PromptReplies map[string]string
 	// Target is what the log shows as "Подключение к <Target>...".
 	Target string
 	// Cleanup removes temp files; called once the process has exited.

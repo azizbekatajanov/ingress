@@ -35,14 +35,15 @@ type globalProtectBackend struct{}
 const gpGatewayLabel = "GATEWAY:"
 
 var (
-	gpConfiguredRe = regexp.MustCompile(`^Configured as ([0-9A-Fa-f.:]+)`)
-	gpSelectRe     = regexp.MustCompile(`^(.+?)\s*\[(.+)\]:\s*$`)
-	gpServerCertRe = regexp.MustCompile(`^\s*--servercert\s+(pin-sha256:[A-Za-z0-9+/=]+)\s*$`)
-	gpCertAskRe    = regexp.MustCompile(`^Enter 'yes' to accept, 'no' to abort`)
-	gpChallengeRe  = regexp.MustCompile(`(?i)^challenge:\s*$`)
-	gpUsernameRe   = regexp.MustCompile(`(?i)^(username|user name|login|e-?mail)\s*:\s*$`)
-	gpSAMLRe       = regexp.MustCompile(`(?i)^SAML \S+ authentication is required via`)
-	gpHIPMissingRe = regexp.MustCompile(`(?i)Server asked us to submit HIP report`)
+	gpConfiguredRe      = regexp.MustCompile(`^Configured as ([0-9A-Fa-f.:]+)`)
+	gpSelectRe          = regexp.MustCompile(`^(.+?)\s*\[(.+)\]:\s*$`)
+	gpServerCertRe      = regexp.MustCompile(`^\s*--servercert\s+(pin-sha256:[A-Za-z0-9+/=]+)\s*$`)
+	gpCertAskRe         = regexp.MustCompile(`^Enter 'yes' to accept, 'no' to abort`)
+	gpChallengeRe       = regexp.MustCompile(`(?i)^challenge:\s*$`)
+	gpAltSecretPromptRe = regexp.MustCompile(`^(prelogin-cookie|portal-userauthcookie|portal-prelogonuserauthcookie):\s*$`)
+	gpUsernameRe        = regexp.MustCompile(`(?i)^(username|user name|login|e-?mail)\s*:\s*$`)
+	gpSAMLRe            = regexp.MustCompile(`(?i)^SAML \S+ authentication is required via`)
+	gpHIPMissingRe      = regexp.MustCompile(`(?i)Server asked us to submit HIP report`)
 	// Server/client errors worth showing on the overview. openconnect's
 	// error output is free text (gpst.c prints the gateway's own <error>
 	// message verbatim), so this is a list of known shapes rather than a
@@ -123,10 +124,18 @@ func (globalProtectBackend) Prepare(p Profile, auth authInput, toolPath string) 
 
 	var args []string
 	var secret string
+	var replies map[string]string
 	if auth.SAML != nil {
 		field, value := auth.SAML.secretField()
 		args = []string{"--protocol=gp", "--user=" + auth.SAML.Username, "--usergroup=" + target + ":" + field, "--passwd-on-stdin"}
 		secret = value
+		// After SAML on the portal, openconnect replays credentials to the
+		// gateway only if the portal returned a portal-userauthcookie; with
+		// an alternate secret it otherwise re-asks the gateway form for the
+		// same field ("prelogin-cookie: "). Answer once with the same cookie
+		// — gateways sharing the portal's SAML accept it (checked against
+		// openconnect's fake-gp-server in ingress-deps' tests).
+		replies = map[string]string{field + ":": value}
 	} else {
 		if gp.Auth == GPAuthSAML {
 			return backendLaunch{}, errors.New("для SAML-входа нет данных из окна входа")
@@ -183,7 +192,7 @@ func (globalProtectBackend) Prepare(p Profile, auth authInput, toolPath string) 
 	}
 	args = append(args, server)
 
-	return backendLaunch{Args: args, Stdin: secret, Target: server}, nil
+	return backendLaunch{Args: args, Stdin: secret, PromptReplies: replies, Target: server}, nil
 }
 
 // openconnectHelperDirs lists where helper scripts live relative to the
@@ -242,6 +251,11 @@ func (globalProtectBackend) Parse(line string, prompt bool) []lineEvent {
 		}
 		if gpChallengeRe.MatchString(trimmed) {
 			return []lineEvent{{Kind: evPrompt, Prompt: PromptOTP}}
+		}
+		if gpAltSecretPromptRe.MatchString(trimmed) {
+			// Already answered once (see Prepare's PromptReplies): the
+			// gateway wants its own SAML login, not the portal's cookie.
+			return []lineEvent{{Kind: evFatal, Value: "шлюз не принял вход, выполненный на портале, — он требует отдельный SAML-вход. Выберите «Подключаться к: напрямую к шлюзу» и укажите адрес шлюза"}}
 		}
 		if gpUsernameRe.MatchString(trimmed) {
 			return []lineEvent{{Kind: evFatal, Value: "сервер запросил имя пользователя — проверьте его в настройках профиля"}}

@@ -92,7 +92,9 @@ type liveConnection struct {
 	// redact is a secret written to the client's stdin (see
 	// backendLaunch.Stdin). The pty echoes stdin back into the output, so
 	// any line containing it is masked before it reaches the log.
-	redact      string
+	redact string
+	// replies: see backendLaunch.PromptReplies; entries are deleted once used.
+	replies     map[string]string
 	stdin       io.WriteCloser
 	cleanup     func()
 	status      Status
@@ -338,6 +340,7 @@ func (m *Manager) launch(conn *liveConnection, profile Profile, toolPath string,
 	conn.proc = proc
 	conn.stdin = proc.Stdin()
 	conn.redact = launch.Stdin
+	conn.replies = launch.PromptReplies
 	conn.cleanup = func() {
 		elevateCleanup()
 		cleanupLaunch()
@@ -510,7 +513,20 @@ func (m *Manager) handleLine(conn *liveConnection, line string, prompt bool) {
 	conn.mu.Lock()
 	status := conn.status
 	cancelling := conn.cancelling
+	reply, autoReply := conn.replies[strings.TrimSpace(line)]
+	if prompt && autoReply && !cancelling {
+		delete(conn.replies, strings.TrimSpace(line))
+	}
 	conn.mu.Unlock()
+
+	if prompt && autoReply && !cancelling {
+		conn.addLog(fmt.Sprintf("Клиент снова запросил «%s» — передаю те же данные входа", strings.TrimSpace(line)))
+		if _, err := io.WriteString(conn.stdin, reply+"\n"); err != nil {
+			conn.addLog(fmt.Sprintf("Не удалось ответить клиенту: %v", err))
+		}
+		m.emit(conn)
+		return
+	}
 
 	promoted := false
 	for _, ev := range conn.backend.Parse(line, prompt) {

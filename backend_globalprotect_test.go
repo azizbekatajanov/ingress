@@ -225,3 +225,23 @@ func TestShellQuoteSurvivesSh(t *testing.T) {
 		}
 	}
 }
+
+func TestManagerResendsSAMLCookieToGatewayOnce(t *testing.T) {
+	m, conn, proc := newGPTestConn(t)
+	p := gpProfile()
+	l, err := (globalProtectBackend{}).Prepare(p, authInput{SAML: &samlResult{Username: "u", PreloginCookie: "PC"}}, "/nonexistent/bin/openconnect")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.replies = l.PromptReplies
+
+	m.handleLine(conn, "prelogin-cookie: ", true)
+	if proc.stdin.String() != "PC\n" || conn.failed {
+		t.Fatalf("first prompt: stdin=%q failed=%v", proc.stdin.String(), conn.failed)
+	}
+	// Asked again: the gateway rejected the portal's cookie.
+	m.handleLine(conn, "prelogin-cookie: ", true)
+	if proc.stdin.String() != "PC\n" || !conn.failed || !strings.Contains(conn.lastError, "напрямую к шлюзу") {
+		t.Fatalf("second prompt: stdin=%q failed=%v err=%q", proc.stdin.String(), conn.failed, conn.lastError)
+	}
+}
