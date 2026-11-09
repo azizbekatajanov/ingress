@@ -41,7 +41,8 @@ func TestGlobalProtectParse(t *testing.T) {
 		{"ESP session established with server", false, nil},
 		{"Failed to connect ESP tunnel; using HTTPS instead.", false, nil},
 		{"Authentication failed: Invalid username or password", false, []lineEvent{{Kind: evError, Value: "Authentication failed: Invalid username or password"}}},
-		{"Failed to obtain WebVPN cookie", false, []lineEvent{{Kind: evError, Value: "Failed to obtain WebVPN cookie"}}},
+		{"Failed to obtain WebVPN cookie", false, []lineEvent{{Kind: evError, Fallback: true, Value: "Failed to obtain WebVPN cookie"}}},
+		{"Failed to complete authentication", false, []lineEvent{{Kind: evError, Fallback: true, Value: "Failed to complete authentication"}}},
 		{"SAML REDIRECT authentication is required via https://idp.example.com/sso", false, []lineEvent{{Kind: evFatal, Value: "сервер требует вход через SAML. Выберите способ входа «Автоматически» или «SAML»; если он уже выбран — значит, шлюз требует отдельный вход: выберите «Подключаться к: напрямую к шлюзу» и укажите адрес шлюза"}}},
 		// a normal line ending in ':' is not a prompt unless it was left unterminated
 		{"2 gateway servers available:", true, []lineEvent{{Kind: evFatal, Value: "сервер отклонил логин или пароль (запрос «2 gateway servers available:»)"}}},
@@ -243,5 +244,30 @@ func TestManagerResendsSAMLCookieToGatewayOnce(t *testing.T) {
 	m.handleLine(conn, "prelogin-cookie: ", true)
 	if proc.stdin.String() != "PC\n" || !conn.failed || !strings.Contains(conn.lastError, "напрямую к шлюзу") {
 		t.Fatalf("second prompt: stdin=%q failed=%v err=%q", proc.stdin.String(), conn.failed, conn.lastError)
+	}
+}
+
+func TestGenericFailureDoesNotHideCause(t *testing.T) {
+	m, conn, _ := newGPTestConn(t)
+	m.handleLine(conn, "Authentication failed: Invalid username or password", false)
+	m.handleLine(conn, "Failed to complete authentication", false)
+	if conn.lastError != "Authentication failed: Invalid username or password" {
+		t.Errorf("lastError = %q", conn.lastError)
+	}
+	// With nothing better, the generic line is still shown.
+	m, conn, _ = newGPTestConn(t)
+	m.handleLine(conn, "Failed to complete authentication", false)
+	if conn.lastError != "Failed to complete authentication" {
+		t.Errorf("lastError = %q", conn.lastError)
+	}
+}
+
+func TestLegacyRenegotiationHint(t *testing.T) {
+	m, conn, _ := newGPTestConn(t)
+	m.handleLine(conn, "00D39EFD01000000:error:0A000152:SSL routines:final_renegotiate:unsafe legacy renegotiation disabled:ssl/statem/extensions.c:897:", false)
+	m.handleLine(conn, "Failed to open HTTPS connection to gp.example.com", false)
+	m.handleLine(conn, "Failed to complete authentication", false)
+	if !strings.Contains(conn.lastError, "RFC 5746") {
+		t.Errorf("lastError = %q", conn.lastError)
 	}
 }

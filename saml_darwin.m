@@ -33,6 +33,20 @@
 
 @implementation SAMLDelegate
 
+// Portals set to "use default browser for SAML" finish by navigating to
+// globalprotectcallback:<data>; catch it instead of failing on the scheme.
+- (void)webView:(WKWebView *)webView
+    decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction
+                    decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
+    NSURL *url = navigationAction.request.URL;
+    if ([[url.scheme lowercaseString] isEqualToString:@"globalprotectcallback"]) {
+        decisionHandler(WKNavigationActionPolicyCancel);
+        samlGotCallback((char *)[url.absoluteString UTF8String]);
+        return;
+    }
+    decisionHandler(WKNavigationActionPolicyAllow);
+}
+
 - (void)webView:(WKWebView *)webView
     decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse
                       decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler {

@@ -59,6 +59,12 @@ func samlGotBody(html *C.char) {
 	samlFinishIfDone()
 }
 
+//export samlGotCallback
+func samlGotCallback(rawURL *C.char) {
+	samlState.addCallback(C.GoString(rawURL))
+	samlFinishIfDone()
+}
+
 //export samlWindowClosed
 func samlWindowClosed() {
 	writeSAMLResult(samlResult{Cancelled: true})

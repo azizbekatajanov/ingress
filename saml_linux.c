@@ -14,6 +14,19 @@ static void on_destroy(GtkWidget *widget, gpointer data) {
 
 static gboolean on_decide_policy(WebKitWebView *view, WebKitPolicyDecision *decision,
                                  WebKitPolicyDecisionType type, gpointer data) {
+    if (type == WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION ||
+        type == WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION) {
+        // Portals set to "use default browser for SAML" finish by navigating
+        // to globalprotectcallback:<data>; catch it.
+        WebKitNavigationAction *action = webkit_navigation_policy_decision_get_navigation_action(
+            WEBKIT_NAVIGATION_POLICY_DECISION(decision));
+        const char *uri = webkit_uri_request_get_uri(webkit_navigation_action_get_request(action));
+        if (uri && g_ascii_strncasecmp(uri, "globalprotectcallback:", 22) == 0) {
+            webkit_policy_decision_ignore(decision);
+            samlGotCallback((char *)uri);
+            return TRUE;
+        }
+    }
     if (type == WEBKIT_POLICY_DECISION_TYPE_RESPONSE) {
         WebKitURIResponse *resp =
             webkit_response_policy_decision_get_response(WEBKIT_RESPONSE_POLICY_DECISION(decision));

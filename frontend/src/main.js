@@ -7,7 +7,7 @@ import {
   WindowMinimise, WindowToggleFullscreen, HideWindow, ConfirmQuit,
   GetAppInfo,
 } from '../wailsjs/go/main/App';
-import { EventsOn, BrowserOpenURL } from '../wailsjs/runtime/runtime';
+import { EventsOn, BrowserOpenURL, ClipboardSetText } from '../wailsjs/runtime/runtime';
 
 const TYPE_LABELS = { fortinet: 'Fortinet', globalprotect: 'GlobalProtect' };
 const PROFILE_COLORS = ['#ff6961', '#5ac8fa', '#ffd60a', '#bf5af2', '#30d158', '#ff9f0a'];
@@ -17,6 +17,9 @@ const state = {
   selectedProfileId: null,
   activeTab: 'general',
   showSettings: false,
+  // showLog: the log of the last (failed) attempt, viewable while
+  // disconnected — otherwise the log tab only exists while connected.
+  showLog: false,
   theme: 'light',
   showPassword: false,
   otpCode: '',
@@ -83,6 +86,7 @@ function hostLine(p) {
 
 // ---- backend-driven actions ----
 async function startConnect(id) {
+  state.showLog = false;
   try { await Connect(id); } catch (e) { alert('Не удалось подключиться: ' + errText(e)); }
 }
 async function cancelConnect(id) { try { await CancelConnect(id); } catch (e) { /* ignore */ } }
@@ -181,7 +185,7 @@ function render() {
   state.profiles.forEach((p, i) => {
     const pStatus = snapshotOf(p.id).status;
     const row = el('div', 'profile-row' + (p.id === state.selectedProfileId ? ' selected' : ''));
-    row.onclick = () => { state.selectedProfileId = p.id; state.showSettings = false; SelectProfile(p.id).catch(() => {}); render(); };
+    row.onclick = () => { state.selectedProfileId = p.id; state.showSettings = false; state.showLog = false; SelectProfile(p.id).catch(() => {}); render(); };
     const avatar = el('div', 'avatar');
     paintAvatar(avatar, p, PROFILE_COLORS[i % PROFILE_COLORS.length]);
     const info = el('div', 'profile-info');
@@ -227,8 +231,9 @@ function render() {
   let tabsDef = [];
   if (isConnected) tabsDef = ['status', 'log'];
   else if (state.showSettings) tabsDef = ['general', 'certificate', 'advanced'];
-  tabsRow.hidden = tabsDef.length === 0;
-  backBtn.hidden = !(state.showSettings && !isConnected);
+  const showPastLog = sp && snap.status === 'disconnected' && state.showLog && !state.showSettings;
+  tabsRow.hidden = tabsDef.length === 0 && !showPastLog;
+  backBtn.hidden = !((state.showSettings || showPastLog) && !isConnected);
   if (!tabsDef.includes(state.activeTab)) state.activeTab = tabsDef[0];
   allTabs.forEach(t => {
     const show = tabsDef.includes(t.dataset.tab);
@@ -237,7 +242,7 @@ function render() {
   });
 
   // content views
-  const showOverview = sp && snap.status === 'disconnected' && !state.showSettings;
+  const showOverview = sp && snap.status === 'disconnected' && !state.showSettings && !showPastLog;
   const showConnecting = sp && snap.status === 'connecting';
   $('#viewOverview').hidden = !showOverview;
   $('#viewConnecting').hidden = !showConnecting;
@@ -245,7 +250,7 @@ function render() {
   $('#viewCertificate').hidden = !(sp && !isConnected && state.showSettings && state.activeTab === 'certificate');
   $('#viewAdvanced').hidden = !(sp && !isConnected && state.showSettings && state.activeTab === 'advanced');
   $('#viewStatus').hidden = !(isConnected && state.activeTab === 'status');
-  $('#viewLog').hidden = !(isConnected && state.activeTab === 'log');
+  $('#viewLog').hidden = !((isConnected && state.activeTab === 'log') || showPastLog);
 
   if (showOverview) {
     paintAvatar($('#overviewAvatar'), sp, PROFILE_COLORS[selIdx % PROFILE_COLORS.length]);
@@ -258,7 +263,7 @@ function render() {
 
   if (sp && !isConnected) fillForm(sp);
   if (isConnected && state.activeTab === 'status') fillStatus(sp, snap);
-  if (isConnected && state.activeTab === 'log') {
+  if ((isConnected && state.activeTab === 'log') || showPastLog) {
     $('#logTitle').textContent = sp.type === 'globalprotect' ? 'Вывод openconnect' : 'Вывод openfortivpn / pppd';
     fillLog(snap);
   }
@@ -305,7 +310,21 @@ function renderErrorBanner(snap) {
   const host = $('#errorBanner');
   host.innerHTML = '';
   if (!snap.lastError) return;
-  host.appendChild(el('div', 'banner error', `Не удалось подключиться: ${snap.lastError}`));
+  const b = el('div', 'banner error', `Не удалось подключиться: ${snap.lastError}`);
+  if ((snap.logLines || []).length) {
+    const actions = el('div', 'banner-actions');
+    actions.appendChild(actionBtn('neutral', 'Журнал', () => { state.showLog = true; render(); }));
+    actions.appendChild(actionBtn('neutral', 'Скопировать журнал', () => copyLog(snap)));
+    b.appendChild(actions);
+  }
+  host.appendChild(b);
+}
+
+function logText(snap) {
+  return (snap.logLines || []).map(l => `[${l.ts}] ${l.text}`).join('\n');
+}
+async function copyLog(snap) {
+  try { await ClipboardSetText(logText(snap)); } catch (e) { alert('Не удалось скопировать: ' + errText(e)); }
 }
 
 // ---- components (openfortivpn / openconnect binaries) ----
@@ -556,14 +575,15 @@ function fillLog(snap) {
 
 // ---- event wiring ----
 profileSelectEl.addEventListener('change', e => {
-  state.selectedProfileId = e.target.value; state.showSettings = false;
+  state.selectedProfileId = e.target.value; state.showSettings = false; state.showLog = false;
   SelectProfile(e.target.value).catch(() => {});
   render();
 });
 $('#addProfile').onclick = addProfile;
 $('#themeToggle').onclick = () => { state.theme = state.theme === 'light' ? 'dark' : 'light'; SetTheme(state.theme).catch(() => {}); render(); };
 $('#gearBtn').onclick = () => { state.showSettings = !state.showSettings; render(); };
-$('#backToOverview').onclick = () => { state.showSettings = false; render(); };
+$('#backToOverview').onclick = () => { state.showSettings = false; state.showLog = false; render(); };
+$('#copyLogBtn').onclick = () => { const sp = selected(); if (sp) copyLog(snapshotOf(sp.id)); };
 $('#cancelConnectBtn').onclick = () => { const sp = selected(); if (sp) cancelConnect(sp.id); };
 $('#togglePassword').onclick = () => { state.showPassword = !state.showPassword; render(); };
 $('#openSettingsLink').onclick = () => { state.showSettings = true; render(); };

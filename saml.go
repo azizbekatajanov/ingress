@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
@@ -41,8 +42,11 @@ type samlResult struct {
 	Username             string `json:"username,omitempty"`
 	PreloginCookie       string `json:"preloginCookie,omitempty"`
 	PortalUserauthcookie string `json:"portalUserauthcookie,omitempty"`
-	Cancelled            bool   `json:"cancelled,omitempty"`
-	Error                string `json:"error,omitempty"`
+	// Source says where the result was found ("заголовки ответа",
+	// "страница", "globalprotectcallback") — logged for diagnostics.
+	Source    string `json:"source,omitempty"`
+	Cancelled bool   `json:"cancelled,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // secretField is the openconnect --usergroup suffix naming which cookie the
@@ -79,6 +83,7 @@ func samlRequestFromPrelogin(info gpPreloginInfo, base, title string) (samlReque
 type samlCollector struct {
 	mu     sync.Mutex
 	fields map[string]string
+	source string // where the last useful field came from
 }
 
 var samlFieldNames = []string{"saml-username", "prelogin-cookie", "portal-userauthcookie", "saml-auth-status", "saml-message"}
@@ -102,17 +107,60 @@ func (c *samlCollector) addHeaders(block string) {
 		for _, f := range samlFieldNames {
 			if name == f {
 				c.fields[f] = strings.TrimSpace(value)
+				c.source = "заголовки ответа"
 			}
 		}
 	}
 }
 
 func (c *samlCollector) addBody(html string) {
+	c.addBodyFrom(html, "страница")
+}
+
+func (c *samlCollector) addBodyFrom(html, source string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, m := range samlBodyFieldRe.FindAllStringSubmatch(html, -1) {
 		c.fields[m[1]] = strings.TrimSpace(m[2])
+		c.source = source
 	}
+}
+
+// addCallback handles a globalprotectcallback: URL — how portals set to
+// "use default browser for SAML" (prelogin <saml-default-browser>yes) hand
+// the result back: either base64 of the same XML-ish tags as the final
+// page, or CAS-style "cas-as=1&un=<user>&token=<cookie>".
+func (c *samlCollector) addCallback(rawURL string) {
+	data := strings.TrimPrefix(rawURL, "globalprotectcallback:")
+	data = strings.TrimPrefix(data, "//")
+	// PathUnescape, not QueryUnescape: "+" is a base64 character here,
+	// not an encoded space.
+	if unescaped, err := url.PathUnescape(data); err == nil {
+		data = unescaped
+	}
+	if strings.Contains(data, "cas-as=") {
+		q, err := url.ParseQuery(strings.TrimPrefix(rawURL, "globalprotectcallback:"))
+		if err != nil {
+			return
+		}
+		c.mu.Lock()
+		if un := q.Get("un"); un != "" {
+			c.fields["saml-username"] = un
+		}
+		if token := q.Get("token"); token != "" {
+			c.fields["prelogin-cookie"] = token
+		}
+		c.source = "globalprotectcallback (CAS)"
+		c.mu.Unlock()
+		return
+	}
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		if decoded, err := enc.DecodeString(strings.TrimSpace(data)); err == nil {
+			c.addBodyFrom(string(decoded), "globalprotectcallback")
+			return
+		}
+	}
+	c.addBodyFrom(data, "globalprotectcallback")
 }
 
 // result reports a finished login (success or explicit failure), or false
@@ -133,6 +181,7 @@ func (c *samlCollector) result() (samlResult, bool) {
 		PortalUserauthcookie: c.fields["portal-userauthcookie"],
 	}
 	if r.Username != "" && (r.PreloginCookie != "" || r.PortalUserauthcookie != "") {
+		r.Source = c.source
 		return r, true
 	}
 	return samlResult{}, false

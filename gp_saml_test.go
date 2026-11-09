@@ -217,3 +217,35 @@ func TestAbortPendingSavesOfferedPin(t *testing.T) {
 		t.Errorf("cancel surfaced as failure: %q %v", conn.lastError, *events)
 	}
 }
+
+func TestSAMLCallback(t *testing.T) {
+	xmlish := `<html><!-- <saml-auth-status>1</saml-auth-status><prelogin-cookie>CB42</prelogin-cookie><saml-username>j.doe@example.com</saml-username> --></html>`
+	for name, raw := range map[string]string{
+		"std base64":     "globalprotectcallback:" + base64.StdEncoding.EncodeToString([]byte(xmlish)),
+		"url-escaped":    "globalprotectcallback:" + url.QueryEscape(base64.StdEncoding.EncodeToString([]byte(xmlish))),
+		"raw url base64": "globalprotectcallback:" + base64.RawURLEncoding.EncodeToString([]byte(xmlish)),
+	} {
+		c := newSAMLCollector()
+		c.addCallback(raw)
+		r, done := c.result()
+		if !done || r.Username != "j.doe@example.com" || r.PreloginCookie != "CB42" || r.Source != "globalprotectcallback" {
+			t.Errorf("%s: %+v %v", name, r, done)
+		}
+	}
+
+	c := newSAMLCollector()
+	c.addCallback("globalprotectcallback:cas-as=1&un=j.doe%40example.com&token=TOK123")
+	r, done := c.result()
+	if !done || r.Username != "j.doe@example.com" || r.PreloginCookie != "TOK123" {
+		t.Errorf("CAS: %+v %v", r, done)
+	}
+}
+
+func TestFallbackErrorQuotesPreviousLine(t *testing.T) {
+	m, conn, _ := newGPTestConn(t)
+	m.handleLine(conn, "Matching client config not found", false)
+	m.handleLine(conn, "Failed to complete authentication", false)
+	if !strings.Contains(conn.lastError, "Failed to complete authentication") || !strings.Contains(conn.lastError, "Matching client config not found") {
+		t.Errorf("lastError = %q", conn.lastError)
+	}
+}

@@ -105,6 +105,9 @@ type lineEvent struct {
 	// one — for a clear explanation followed by the client's own generic
 	// failure lines.
 	Sticky bool
+	// Fallback (evError only): a generic summary line ("Failed to complete
+	// authentication") — used only if nothing more specific was seen.
+	Fallback bool
 	// Label and Options describe a PromptChoice.
 	Label   string
 	Options []string

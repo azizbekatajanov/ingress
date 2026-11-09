@@ -93,6 +93,9 @@ type liveConnection struct {
 	// backendLaunch.Stdin). The pty echoes stdin back into the output, so
 	// any line containing it is masked before it reaches the log.
 	redact string
+	// prevLine is the last non-empty output line before the current one —
+	// context for a Fallback error (see lineEvent.Fallback).
+	prevLine string
 	// replies: see backendLaunch.PromptReplies; entries are deleted once used.
 	replies     map[string]string
 	stdin       io.WriteCloser
@@ -533,6 +536,15 @@ func (m *Manager) handleLine(conn *liveConnection, line string, prompt bool) {
 		switch ev.Kind {
 		case evError:
 			conn.mu.Lock()
+			if ev.Fallback && conn.lastError != "" {
+				conn.mu.Unlock()
+				continue
+			}
+			if ev.Fallback && conn.prevLine != "" {
+				// The client's own wording for the cause is usually the line
+				// right before its generic summary.
+				ev.Value += " (последнее сообщение: «" + conn.prevLine + "»)"
+			}
 			if ev.Sticky || !conn.errorSticky {
 				conn.lastError = ev.Value
 				conn.errorSticky = conn.errorSticky || ev.Sticky
@@ -605,6 +617,12 @@ func (m *Manager) handleLine(conn *liveConnection, line string, prompt bool) {
 			promoted = promoted || (!cancelling && conn.status != StatusConnected)
 			conn.mu.Unlock()
 		}
+	}
+
+	if t := strings.TrimSpace(line); t != "" {
+		conn.mu.Lock()
+		conn.prevLine = t
+		conn.mu.Unlock()
 	}
 
 	if promoted {

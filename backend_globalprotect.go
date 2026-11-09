@@ -43,7 +43,10 @@ var (
 	gpAltSecretPromptRe = regexp.MustCompile(`^(prelogin-cookie|portal-userauthcookie|portal-prelogonuserauthcookie):\s*$`)
 	gpUsernameRe        = regexp.MustCompile(`(?i)^(username|user name|login|e-?mail)\s*:\s*$`)
 	gpSAMLRe            = regexp.MustCompile(`(?i)^SAML \S+ authentication is required via`)
-	gpHIPMissingRe      = regexp.MustCompile(`(?i)Server asked us to submit HIP report`)
+	// openconnect's closing summary after any auth failure (main.c); the
+	// real reason is printed before it.
+	gpGenericFailRe = regexp.MustCompile(`^(Failed to complete authentication|Failed to obtain WebVPN cookie)\.?$`)
+	gpHIPMissingRe  = regexp.MustCompile(`(?i)Server asked us to submit HIP report`)
 	// Server/client errors worth showing on the overview. openconnect's
 	// error output is free text (gpst.c prints the gateway's own <error>
 	// message verbatim), so this is a list of known shapes rather than a
@@ -108,7 +111,8 @@ func (globalProtectBackend) PreAuth(ctx context.Context, p Profile, password str
 	if err != nil {
 		return authInput{}, err
 	}
-	log(fmt.Sprintf("SAML-вход выполнен (%s)", res.Username))
+	field, value := res.secretField()
+	log(fmt.Sprintf("SAML-вход выполнен: пользователь %s, получен %s (%d символов) — источник: %s", res.Username, field, len(value), res.Source))
 	return authInput{SAML: &res}, nil
 }
 
@@ -270,6 +274,14 @@ func (globalProtectBackend) Parse(line string, prompt bool) []lineEvent {
 		}
 	}
 
+	if strings.Contains(trimmed, "unsafe legacy renegotiation disabled") {
+		// OpenSSL 3 without SSL_OP_LEGACY_SERVER_CONNECT; Ingress' own
+		// openconnect (ingress-deps patch 0002) connects to such servers.
+		return []lineEvent{{Kind: evError, Sticky: true, Value: "сервер не поддерживает безопасное пересогласование TLS (RFC 5746), а этот openconnect на OpenSSL 3 отказывается к нему подключаться — используйте встроенную сборку OpenConnect в «Компоненты»"}}
+	}
+	if gpGenericFailRe.MatchString(trimmed) {
+		return []lineEvent{{Kind: evError, Fallback: true, Value: trimmed}}
+	}
 	// ESP/DTLS problems fall back to TLS on their own — not errors.
 	if gpErrorRe.MatchString(trimmed) && !strings.Contains(trimmed, "ESP") && !strings.Contains(trimmed, "DTLS") {
 		return []lineEvent{{Kind: evError, Value: trimmed}}

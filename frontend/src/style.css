@@ -157,6 +157,7 @@ body.theme-dark .banner { color: #ff9f0a; }
 .stat-value { font-size: 14px; font-weight: 600; color: var(--text); font-family: ui-monospace, monospace; }
 
 .log-view { display: flex; flex-direction: column; height: 100%; gap: 10px; }
+.log-actions { display: flex; gap: 14px; }
 .log-header { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--text); }
 .log-panel { background: #1c1c1e; border-radius: 12px; padding: 14px 16px; flex: 1; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.7; min-height: 260px; color: #c7c7cc; }
 .log-panel .empty { color: #6e6e73; }
