@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -10,7 +11,11 @@ import (
 )
 
 // globalProtectBackend drives openconnect --protocol=gp (Palo Alto
-// GlobalProtect), password login. SAML is phase 5 of design/v2-plan.md.
+// GlobalProtect): password login, or SAML through Ingress' own login window
+// (PreAuth) with the resulting cookie handed to openconnect as an alternate
+// secret — `--usergroup=portal:prelogin-cookie`. That alternate-secret path
+// needs openconnect with MR !656 (an empty "passwd" field next to the
+// cookie, which some gateways insist on); Ingress' own build carries it.
 //
 // The patterns below are taken from openconnect v9.21's own source (main.c,
 // auth-globalprotect.c, gpst.c), not guessed from captured output:
@@ -66,30 +71,85 @@ func (globalProtectBackend) Component() string { return "openconnect" }
 // on Linux); Manager looks the interface up by the assigned IP.
 func (globalProtectBackend) DefaultInterface() string { return "" }
 
-func (globalProtectBackend) Prepare(p Profile, secret, toolPath string) (backendLaunch, error) {
+// NeedsPreAuth: anything but an explicit password login starts with
+// prelogin (to find out whether the server wants SAML).
+func (globalProtectBackend) NeedsPreAuth(p Profile) bool {
+	return p.GlobalProtect != nil && p.GlobalProtect.Auth != GPAuthPassword
+}
+
+func (globalProtectBackend) PreAuth(ctx context.Context, p Profile, password string, log func(string)) (authInput, error) {
+	gp := p.GlobalProtect
+	log("Запрос способа входа (prelogin)...")
+	info, err := gpPrelogin(ctx, p)
+	if err != nil {
+		var cert *errUntrustedServerCert
+		if errors.As(err, &cert) || ctx.Err() != nil || gp.Auth == GPAuthSAML {
+			return authInput{}, err
+		}
+		// Auto: let openconnect try the password and report what's wrong.
+		log(fmt.Sprintf("Не удалось узнать способ входа (%v) — пробую вход по паролю", err))
+		return authInput{Password: password}, nil
+	}
+	if !info.usesSAML() {
+		if gp.Auth == GPAuthSAML {
+			return authInput{}, errors.New("сервер не предлагает вход через SAML — выберите способ входа «Логин и пароль» или «Автоматически»")
+		}
+		log("Сервер использует вход по логину и паролю")
+		return authInput{Password: password}, nil
+	}
+
+	req, err := samlRequestFromPrelogin(info, gpServerURL(p), "Вход в "+p.Name)
+	if err != nil {
+		return authInput{}, err
+	}
+	log("Сервер требует вход через SAML — открыто окно входа")
+	res, err := samlLogin(ctx, req)
+	if err != nil {
+		return authInput{}, err
+	}
+	log(fmt.Sprintf("SAML-вход выполнен (%s)", res.Username))
+	return authInput{SAML: &res}, nil
+}
+
+func (globalProtectBackend) Prepare(p Profile, auth authInput, toolPath string) (backendLaunch, error) {
 	gp := p.GlobalProtect
 	if gp == nil {
 		return backendLaunch{}, fmt.Errorf("profile %s has no GlobalProtect settings", p.ID)
 	}
-	if gp.Auth == GPAuthSAML {
-		return backendLaunch{}, errors.New("вход через SAML пока не поддерживается — выберите «Логин и пароль»")
-	}
-	if p.Username == "" {
-		return backendLaunch{}, errors.New("не указано имя пользователя")
-	}
-	if secret == "" {
-		return backendLaunch{}, errors.New("не указан пароль")
+	target := "portal"
+	if gp.ConnectTo == GPConnectGateway {
+		target = "gateway"
 	}
 
-	server := p.Host
-	if p.Port != "" && p.Port != "443" {
-		server = "https://" + p.Host + ":" + p.Port
+	var args []string
+	var secret string
+	if auth.SAML != nil {
+		field, value := auth.SAML.secretField()
+		args = []string{"--protocol=gp", "--user=" + auth.SAML.Username, "--usergroup=" + target + ":" + field, "--passwd-on-stdin"}
+		secret = value
+	} else {
+		if gp.Auth == GPAuthSAML {
+			return backendLaunch{}, errors.New("для SAML-входа нет данных из окна входа")
+		}
+		if p.Username == "" {
+			return backendLaunch{}, errors.New("не указано имя пользователя")
+		}
+		if auth.Password == "" {
+			return backendLaunch{}, errors.New("не указан пароль")
+		}
+		args = []string{"--protocol=gp", "--user=" + p.Username, "--passwd-on-stdin"}
+		if target == "gateway" {
+			args = append(args, "--usergroup=gateway")
+		}
+		secret = auth.Password
 	}
-	args := []string{"--protocol=gp", "--user=" + p.Username, "--passwd-on-stdin"}
-	if gp.ConnectTo == GPConnectGateway {
-		args = append(args, "--usergroup=gateway")
-	} else if gp.Gateway != "" {
+	if target == "portal" && gp.Gateway != "" {
 		args = append(args, "--authgroup="+gp.Gateway)
+	}
+
+	server := gpServerURL(p)
+	if p.Port == "" || p.Port == "443" {
+		server = p.Host // plain host, as openconnect users usually write it
 	}
 	if gp.ServerCert != "" {
 		args = append(args, "--servercert="+gp.ServerCert)
@@ -170,7 +230,7 @@ func (globalProtectBackend) Parse(line string, prompt bool) []lineEvent {
 		return []lineEvent{{Kind: evAssignedIP, Value: m[1]}}
 	}
 	if gpSAMLRe.MatchString(trimmed) {
-		return []lineEvent{{Kind: evFatal, Value: "портал требует вход через SAML, а он пока не поддерживается"}}
+		return []lineEvent{{Kind: evFatal, Value: "сервер требует вход через SAML. Выберите способ входа «Автоматически» или «SAML»; если он уже выбран — значит, шлюз требует отдельный вход: выберите «Подключаться к: напрямую к шлюзу» и укажите адрес шлюза"}}
 	}
 	if gpHIPMissingRe.MatchString(trimmed) {
 		return []lineEvent{{Kind: evError, Value: "шлюз требует HIP report — включите его в настройках профиля (Дополнительно)"}}

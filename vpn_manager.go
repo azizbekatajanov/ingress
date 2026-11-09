@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -103,6 +104,9 @@ type liveConnection struct {
 	lastError   string
 	// errorSticky: lastError came from a sticky event (see lineEvent.Sticky).
 	errorSticky bool
+	// cancelPreAuth stops a running pre-auth step (closes the SAML window);
+	// nil when the backend has none.
+	cancelPreAuth context.CancelFunc
 	// failed: the backend reported a fatal condition and Manager stopped the
 	// client itself — unlike a user cancel, the failure must still surface.
 	failed        bool
@@ -225,6 +229,11 @@ func (c *liveConnection) addLog(text string) {
 // Connect spawns the profile's VPN client (see backendFor), elevated.
 // Credentials never go on argv, where they'd be visible to `ps` — each
 // backend passes them via a private temp file or stdin.
+//
+// Backends with a pre-auth step (GlobalProtect: prelogin, maybe a SAML
+// window) run it asynchronously first: Connect returns right away with the
+// profile in "connecting", and anything that goes wrong later is reported
+// through the snapshot's LastError like any other failed attempt.
 func (m *Manager) Connect(profileID string) error {
 	if existing := m.get(profileID); existing != nil {
 		existing.mu.Lock()
@@ -255,7 +264,53 @@ func (m *Manager) Connect(profileID string) error {
 		return fmt.Errorf("reading password from keychain: %w", err)
 	}
 
-	launch, err := backend.Prepare(profile, password, toolPath)
+	conn := &liveConnection{
+		profileID: profileID,
+		backend:   backend,
+		status:    StatusConnecting,
+		startedAt: time.Now(),
+		done:      make(chan struct{}),
+	}
+
+	pa, hasPreAuth := backend.(preAuthenticator)
+	if !hasPreAuth || !pa.NeedsPreAuth(profile) {
+		if err := m.launch(conn, profile, toolPath, authInput{Password: password}); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	conn.cancelPreAuth = cancel
+	conn.addLog(fmt.Sprintf("Подключение к %s...", profile.Host))
+	m.mu.Lock()
+	m.conns[profileID] = conn
+	m.mu.Unlock()
+	m.emit(conn)
+
+	go func() {
+		defer cancel()
+		auth, err := pa.PreAuth(ctx, profile, password, conn.addLog)
+		if err == nil {
+			// Re-read: the user may have edited the profile meanwhile, and
+			// PreAuth may have taken minutes.
+			if fresh, ok := m.store.Get(profileID); ok {
+				profile = fresh
+			}
+			err = m.launch(conn, profile, toolPath, auth)
+		}
+		if err != nil {
+			m.abortPending(conn, err)
+		}
+	}()
+	return nil
+}
+
+// launch starts the elevated client for conn. On error nothing is left
+// running and conn is not registered (synchronous path) or must be
+// finished by the caller via abortPending (pre-auth path).
+func (m *Manager) launch(conn *liveConnection, profile Profile, toolPath string, auth authInput) error {
+	launch, err := conn.backend.Prepare(profile, auth, toolPath)
 	if err != nil {
 		return err
 	}
@@ -265,37 +320,53 @@ func (m *Manager) Connect(profileID string) error {
 		}
 	}
 
+	conn.mu.Lock()
+	cancelled := conn.cancelling
+	conn.mu.Unlock()
+	if cancelled {
+		cleanupLaunch()
+		return errSAMLCancelled
+	}
+
 	proc, elevateCleanup, err := elevatedCommand(toolPath, launch.Args...)
 	if err != nil {
 		cleanupLaunch()
 		return err
 	}
 
-	conn := &liveConnection{
-		profileID: profileID,
-		backend:   backend,
-		proc:      proc,
-		stdin:     proc.Stdin(),
-		redact:    launch.Stdin,
-		status:    StatusConnecting,
-		startedAt: time.Now(),
-		done:      make(chan struct{}),
-		cleanup: func() {
-			elevateCleanup()
-			cleanupLaunch()
-		},
+	conn.mu.Lock()
+	conn.proc = proc
+	conn.stdin = proc.Stdin()
+	conn.redact = launch.Stdin
+	conn.cleanup = func() {
+		elevateCleanup()
+		cleanupLaunch()
 	}
+	// Cancelled while the admin prompt was up: terminate() saw no process
+	// yet, so stop it as soon as it's running (pump then finishes it).
+	cancelledDuringLaunch := conn.cancelling
+	conn.mu.Unlock()
+	defer func() {
+		if cancelledDuringLaunch {
+			proc.Terminate()
+		}
+	}()
 	conn.addLog(fmt.Sprintf("Подключение к %s...", launch.Target))
 
 	m.mu.Lock()
-	m.conns[profileID] = conn
+	m.conns[conn.profileID] = conn
 	m.mu.Unlock()
 
 	if err := proc.Start(); err != nil {
 		conn.cleanup()
-		m.mu.Lock()
-		delete(m.conns, profileID)
-		m.mu.Unlock()
+		conn.mu.Lock()
+		conn.proc = nil
+		conn.mu.Unlock()
+		if conn.cancelPreAuth == nil {
+			m.mu.Lock()
+			delete(m.conns, conn.profileID)
+			m.mu.Unlock()
+		}
 		return err
 	}
 	if launch.Stdin != "" {
@@ -309,6 +380,43 @@ func (m *Manager) Connect(profileID string) error {
 
 	m.emit(conn)
 	return nil
+}
+
+// abortPending ends a connection whose client never started (pre-auth
+// failed, was cancelled, or the client couldn't be launched).
+func (m *Manager) abortPending(conn *liveConnection, err error) {
+	var cert *errUntrustedServerCert
+	switch {
+	case errors.Is(err, errSAMLCancelled) || conn.isCancelling():
+		conn.addLog("Подключение отменено")
+	case errors.As(err, &cert):
+		msg := "сертификат сервера не прошёл проверку"
+		if profile, ok := m.store.Get(conn.profileID); ok {
+			if saved := conn.backend.SaveServerCert(&profile, cert.Pin); saved != "" {
+				if m.store.Update(profile) == nil {
+					conn.addLog(saved)
+					m.profileUpdated(conn.profileID)
+					msg += " — он сохранён в профиле, нажмите «Подключить» ещё раз, если доверяете этому серверу"
+				}
+			}
+		}
+		conn.mu.Lock()
+		conn.lastError, conn.failed = msg, true
+		conn.mu.Unlock()
+		conn.addLog("Ошибка: " + err.Error())
+	default:
+		conn.mu.Lock()
+		conn.lastError, conn.failed = err.Error(), true
+		conn.mu.Unlock()
+		conn.addLog("Ошибка: " + err.Error())
+	}
+	m.finish(conn)
+}
+
+func (c *liveConnection) isCancelling() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.cancelling
 }
 
 // promptFlushDelay bounds how long pump waits, once it has unterminated
@@ -561,8 +669,13 @@ func (m *Manager) tick(conn *liveConnection) {
 // best-effort side effect logged for diagnostics, never as something that
 // gates or contradicts the UI state.
 func (m *Manager) finish(conn *liveConnection) {
-	if err := conn.proc.Wait(); err != nil {
-		log.Printf("[%s] proc.Wait: %v (harmless if the process had already exited)", conn.profileID, err)
+	conn.mu.Lock()
+	proc := conn.proc
+	conn.mu.Unlock()
+	if proc != nil {
+		if err := proc.Wait(); err != nil {
+			log.Printf("[%s] proc.Wait: %v (harmless if the process had already exited)", conn.profileID, err)
+		}
 	}
 	close(conn.done)
 	conn.mu.Lock()
@@ -574,7 +687,9 @@ func (m *Manager) finish(conn *liveConnection) {
 	if !alreadyDisconnected {
 		conn.addLog("Отключено")
 	}
-	conn.cleanup()
+	if conn.cleanup != nil {
+		conn.cleanup()
+	}
 	m.emit(conn)
 
 	// A failed connection attempt is otherwise invisible whenever the window
@@ -591,8 +706,9 @@ func (m *Manager) finish(conn *liveConnection) {
 	if _, exists := m.store.Get(conn.profileID); exists && lastError != "" && !cancelling {
 		m.store.SetSelectedID(conn.profileID)
 		m.events("profile:failed", conn.profileID)
-		wailsRuntime.WindowShow(m.ctx)
-		wailsRuntime.WindowUnminimise(m.ctx)
+		if m.showWindow != nil {
+			m.showWindow()
+		}
 	}
 }
 
@@ -699,6 +815,15 @@ func (m *Manager) terminate(profileID string) error {
 	}
 	conn.mu.Lock()
 	conn.cancelling = true
+	proc, cancelPreAuth := conn.proc, conn.cancelPreAuth
 	conn.mu.Unlock()
-	return conn.proc.Terminate()
+	if proc == nil {
+		// Still in pre-auth: closing the SAML window / aborting prelogin
+		// makes the Connect goroutine finish the connection.
+		if cancelPreAuth != nil {
+			cancelPreAuth()
+		}
+		return nil
+	}
+	return proc.Terminate()
 }

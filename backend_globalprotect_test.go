@@ -42,7 +42,7 @@ func TestGlobalProtectParse(t *testing.T) {
 		{"Failed to connect ESP tunnel; using HTTPS instead.", false, nil},
 		{"Authentication failed: Invalid username or password", false, []lineEvent{{Kind: evError, Value: "Authentication failed: Invalid username or password"}}},
 		{"Failed to obtain WebVPN cookie", false, []lineEvent{{Kind: evError, Value: "Failed to obtain WebVPN cookie"}}},
-		{"SAML REDIRECT authentication is required via https://idp.example.com/sso", false, []lineEvent{{Kind: evFatal, Value: "портал требует вход через SAML, а он пока не поддерживается"}}},
+		{"SAML REDIRECT authentication is required via https://idp.example.com/sso", false, []lineEvent{{Kind: evFatal, Value: "сервер требует вход через SAML. Выберите способ входа «Автоматически» или «SAML»; если он уже выбран — значит, шлюз требует отдельный вход: выберите «Подключаться к: напрямую к шлюзу» и укажите адрес шлюза"}}},
 		// a normal line ending in ':' is not a prompt unless it was left unterminated
 		{"2 gateway servers available:", true, []lineEvent{{Kind: evFatal, Value: "сервер отклонил логин или пароль (запрос «2 gateway servers available:»)"}}},
 	}
@@ -75,7 +75,7 @@ func TestGlobalProtectPrepare(t *testing.T) {
 	p.GlobalProtect.Gateway = "US East"
 	p.GlobalProtect.ServerCert = "pin-sha256:abc="
 	p.GlobalProtect.HipReport = true
-	l, err := (globalProtectBackend{}).Prepare(p, "hunter2", tool)
+	l, err := (globalProtectBackend{}).Prepare(p, authInput{Password: "hunter2"}, tool)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestGlobalProtectPrepare(t *testing.T) {
 	p.Port = "8443"
 	p.GlobalProtect.ConnectTo = GPConnectGateway
 	p.GlobalProtect.Gateway = "ignored when connecting to a gateway"
-	l, err = (globalProtectBackend{}).Prepare(p, "pw", "/nonexistent/bin/openconnect")
+	l, err = (globalProtectBackend{}).Prepare(p, authInput{Password: "pw"}, "/nonexistent/bin/openconnect")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,16 +110,16 @@ func TestGlobalProtectPrepare(t *testing.T) {
 	// Refusals that would otherwise hang on a prompt or fail obscurely.
 	p = gpProfile()
 	p.GlobalProtect.HipReport = true
-	if _, err := (globalProtectBackend{}).Prepare(p, "pw", "/nonexistent/bin/openconnect"); err == nil {
+	if _, err := (globalProtectBackend{}).Prepare(p, authInput{Password: "pw"}, "/nonexistent/bin/openconnect"); err == nil {
 		t.Error("HIP report without hipreport.sh must be refused")
 	}
 	p = gpProfile()
-	if _, err := (globalProtectBackend{}).Prepare(p, "", tool); err == nil {
+	if _, err := (globalProtectBackend{}).Prepare(p, authInput{}, tool); err == nil {
 		t.Error("empty password must be refused")
 	}
 	p.GlobalProtect.Auth = GPAuthSAML
-	if _, err := (globalProtectBackend{}).Prepare(p, "pw", tool); err == nil {
-		t.Error("SAML isn't implemented yet and must say so")
+	if _, err := (globalProtectBackend{}).Prepare(p, authInput{Password: "pw"}, tool); err == nil {
+		t.Error("SAML auth without a SAML result must be refused")
 	}
 }
 

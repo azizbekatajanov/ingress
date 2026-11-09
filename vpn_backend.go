@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // vpnBackend adapts one VPN protocol's command-line client to Manager.
 // Manager owns everything protocol-independent — elevation, reading output
@@ -14,10 +17,10 @@ import "fmt"
 type vpnBackend interface {
 	// Component is the binary this backend runs (see components.go).
 	Component() string
-	// Prepare builds the client's argv for profile p with its stored secret.
-	// toolPath is the resolved binary (see ComponentManager.ResolvePath),
-	// for finding helper scripts installed next to it.
-	Prepare(p Profile, secret, toolPath string) (backendLaunch, error)
+	// Prepare builds the client's argv for profile p authenticating with
+	// auth. toolPath is the resolved binary (see
+	// ComponentManager.ResolvePath), for finding helper scripts next to it.
+	Prepare(p Profile, auth authInput, toolPath string) (backendLaunch, error)
 	// Parse interprets one output line (ANSI codes already stripped).
 	// prompt is true when the line had no trailing newline and nothing
 	// followed it — i.e. the client is almost certainly blocked reading
@@ -33,6 +36,25 @@ type vpnBackend interface {
 	// DefaultInterface is the tunnel interface assumed when the client
 	// reports an IP before naming its interface ("" for none).
 	DefaultInterface() string
+}
+
+// authInput is what the client authenticates with: the stored password, or
+// (GlobalProtect SAML) the cookie Ingress obtained in its own login window.
+type authInput struct {
+	Password string
+	SAML     *samlResult
+}
+
+// preAuthenticator is implemented by backends that may need to do work
+// before the client starts — unprivileged, and possibly slow because it
+// involves the user (a SAML login window).
+type preAuthenticator interface {
+	// NeedsPreAuth reports whether Connect must run PreAuth for p.
+	NeedsPreAuth(p Profile) bool
+	// PreAuth decides how to authenticate and gathers it. Cancelling ctx
+	// (the user pressed Отмена) must abort promptly. log adds a line to the
+	// connection log.
+	PreAuth(ctx context.Context, p Profile, password string, log func(string)) (authInput, error)
 }
 
 type backendLaunch struct {

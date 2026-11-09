@@ -31,8 +31,8 @@ func (fortinetBackend) DefaultInterface() string { return "ppp0" }
 
 // Prepare passes credentials via a private 0600 temp config file
 // (`--config=`), never on argv.
-func (fortinetBackend) Prepare(p Profile, secret, _ string) (backendLaunch, error) {
-	cfgPath, err := writeOpenfortivpnConfig(p, secret)
+func (fortinetBackend) Prepare(p Profile, auth authInput, _ string) (backendLaunch, error) {
+	cfgPath, err := writeOpenfortivpnConfig(p, auth.Password)
 	if err != nil {
 		return backendLaunch{}, fmt.Errorf("writing config: %w", err)
 	}

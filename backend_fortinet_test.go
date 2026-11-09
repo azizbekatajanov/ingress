@@ -36,7 +36,7 @@ func TestFortinetParse(t *testing.T) {
 func TestFortinetPrepareKeepsSecretsOffArgv(t *testing.T) {
 	p := defaultProfile("p1", ProfileTypeFortinet)
 	p.Host, p.Port = "vpn.example.com", "10443"
-	l, err := (fortinetBackend{}).Prepare(p, "hunter2", "/usr/bin/openfortivpn")
+	l, err := (fortinetBackend{}).Prepare(p, authInput{Password: "hunter2"}, "/usr/bin/openfortivpn")
 	if err != nil {
 		t.Fatal(err)
 	}

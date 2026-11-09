@@ -28,6 +28,11 @@ func main() {
 		runPtyExec(os.Args[2:])
 		return
 	}
+	// Hidden mode `--saml-login`: the GlobalProtect SAML window, run as a
+	// child process of the app (unprivileged) — see saml.go.
+	if len(os.Args) > 1 && os.Args[1] == "--saml-login" {
+		os.Exit(runSAMLLoginMode())
+	}
 	// Hidden root modes `--install-component` / `--remove-component`, run
 	// elevated by ComponentManager (see components_root.go).
 	if len(os.Args) > 1 && isRootComponentCommand(os.Args[1]) {
