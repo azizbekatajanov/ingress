@@ -11,6 +11,10 @@ import (
 // argv entirely — argv is world-readable via `ps`, a config file isn't.
 // Field mapping per design/README.md's "openfortivpn CLI mapping" section.
 func writeOpenfortivpnConfig(p Profile, password string) (string, error) {
+	f := p.Fortinet
+	if f == nil {
+		return "", fmt.Errorf("profile %s has no Fortinet settings", p.ID)
+	}
 	var b strings.Builder
 	writeStr := func(key, val string) {
 		if val != "" {
@@ -23,26 +27,26 @@ func writeOpenfortivpnConfig(p Profile, password string) (string, error) {
 
 	writeStr("username", p.Username)
 	writeStr("password", password)
-	writeStr("realm", p.Realm)
-	writeStr("ca-file", p.CaFile)
-	writeStr("user-cert", p.UserCert)
-	writeStr("user-key", p.UserKey)
-	writeStr("trusted-cert", p.TrustedCert)
-	writeBool("insecure-ssl", p.InsecureSsl)
-	writeBool("set-dns", p.SetDns)
-	writeBool("pppd-use-peerdns", p.PppdUsePeerdns)
-	writeBool("set-routes", p.SetRoutes)
-	writeBool("half-internet-routes", p.HalfInternetRoutes)
-	writeStr("pppd-log", p.PppdLog)
+	writeStr("realm", f.Realm)
+	writeStr("ca-file", f.CaFile)
+	writeStr("user-cert", f.UserCert)
+	writeStr("user-key", f.UserKey)
+	writeStr("trusted-cert", f.TrustedCert)
+	writeBool("insecure-ssl", f.InsecureSsl)
+	writeBool("set-dns", f.SetDns)
+	writeBool("pppd-use-peerdns", f.PppdUsePeerdns)
+	writeBool("set-routes", f.SetRoutes)
+	writeBool("half-internet-routes", f.HalfInternetRoutes)
+	writeStr("pppd-log", f.PppdLog)
 
-	f, err := os.CreateTemp("", "ingress-*.conf")
+	file, err := os.CreateTemp("", "ingress-*.conf")
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
-	if _, err := f.WriteString(b.String()); err != nil {
-		os.Remove(f.Name())
+	defer file.Close()
+	if _, err := file.WriteString(b.String()); err != nil {
+		os.Remove(file.Name())
 		return "", err
 	}
-	return f.Name(), nil
+	return file.Name(), nil
 }

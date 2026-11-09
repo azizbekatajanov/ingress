@@ -84,7 +84,7 @@
           </div>
           <div class="field-row">
             <div class="field">
-              <label>Адрес сервера (host)</label>
+              <label id="f-host-label">Адрес сервера (host)</label>
               <input type="text" id="f-host" placeholder="vpn.example.com">
             </div>
             <div class="field small">
@@ -96,86 +96,137 @@
             <label>Имя пользователя (username)</label>
             <input type="text" id="f-username">
           </div>
-          <div class="field">
+          <div class="field" id="f-password-field">
             <label>Пароль</label>
             <div class="password-wrap">
               <input type="password" id="f-password">
               <span class="link inline" id="togglePassword">Показать</span>
             </div>
           </div>
-          <div class="field">
+          <div class="field" data-for="fortinet">
             <label>Realm</label>
-            <input type="text" id="f-realm" placeholder="необязательно">
+            <input type="text" data-bind="fortinet.realm" placeholder="необязательно">
+          </div>
+          <div class="field" data-for="globalprotect">
+            <label>Способ входа</label>
+            <select data-bind="globalprotect.auth">
+              <option value="auto">Автоматически — как требует портал</option>
+              <option value="password">Логин и пароль</option>
+              <option value="saml">SAML (единый вход через браузер)</option>
+            </select>
+          </div>
+          <div class="field" data-for="globalprotect">
+            <label>Подключаться к</label>
+            <select data-bind="globalprotect.connectTo">
+              <option value="portal">Порталу — шлюз выбирается из списка</option>
+              <option value="gateway">Напрямую к шлюзу</option>
+            </select>
+          </div>
+          <div class="field" data-for="globalprotect" data-connect-to="portal">
+            <label>Шлюз</label>
+            <input type="text" data-bind="globalprotect.gateway" placeholder="выбирается при первом подключении">
           </div>
         </div>
 
         <div class="form" id="viewCertificate" hidden>
-          <div class="field">
+          <div class="field" data-for="fortinet">
             <label>CA-сертификат (ca-file)</label>
             <div class="browse-wrap">
-              <input type="text" id="f-caFile" placeholder="/etc/openfortivpn/ca-bundle.pem">
-              <div class="btn neutral" data-browse="caFile">Обзор…</div>
+              <input type="text" data-bind="fortinet.caFile" placeholder="/etc/openfortivpn/ca-bundle.pem">
+              <div class="btn neutral" data-browse="fortinet.caFile">Обзор…</div>
             </div>
           </div>
-          <div class="field">
+          <div class="field" data-for="fortinet">
             <label>Клиентский сертификат (user-cert)</label>
             <div class="browse-wrap">
-              <input type="text" id="f-userCert" placeholder="/home/user/.certs/client.pem">
-              <div class="btn neutral" data-browse="userCert">Обзор…</div>
+              <input type="text" data-bind="fortinet.userCert" placeholder="/home/user/.certs/client.pem">
+              <div class="btn neutral" data-browse="fortinet.userCert">Обзор…</div>
             </div>
           </div>
-          <div class="field">
+          <div class="field" data-for="fortinet">
             <label>Ключ клиента (user-key)</label>
             <div class="browse-wrap">
-              <input type="text" id="f-userKey" placeholder="/home/user/.certs/client.key">
-              <div class="btn neutral" data-browse="userKey">Обзор…</div>
+              <input type="text" data-bind="fortinet.userKey" placeholder="/home/user/.certs/client.key">
+              <div class="btn neutral" data-browse="fortinet.userKey">Обзор…</div>
             </div>
           </div>
-          <div class="field">
+          <div class="field" data-for="fortinet">
             <label>Доверенный сертификат, SHA-256 (trusted-cert)</label>
-            <input type="text" class="mono" id="f-trustedCert" placeholder="e46d4aff08ba6914e64daa85bc6112a4…">
+            <input type="text" class="mono" data-bind="fortinet.trustedCert" placeholder="e46d4aff08ba6914e64daa85bc6112a4…">
           </div>
-          <div class="toggle-row bordered-top">
+          <div class="toggle-row bordered-top" data-for="fortinet">
             <div>
               <div class="toggle-title">Не проверять сертификат сервера</div>
               <div class="toggle-desc danger">insecure-ssl — только для тестовых сред</div>
             </div>
-            <div class="switch danger" id="f-insecureSsl"><div class="knob"></div></div>
+            <div class="switch danger" data-switch="fortinet.insecureSsl"><div class="knob"></div></div>
+          </div>
+          <div class="field" data-for="globalprotect">
+            <label>CA-сертификат (cafile)</label>
+            <div class="browse-wrap">
+              <input type="text" data-bind="globalprotect.caFile" placeholder="необязательно">
+              <div class="btn neutral" data-browse="globalprotect.caFile">Обзор…</div>
+            </div>
+          </div>
+          <div class="field" data-for="globalprotect">
+            <label>Клиентский сертификат (certificate)</label>
+            <div class="browse-wrap">
+              <input type="text" data-bind="globalprotect.userCert" placeholder="необязательно">
+              <div class="btn neutral" data-browse="globalprotect.userCert">Обзор…</div>
+            </div>
+          </div>
+          <div class="field" data-for="globalprotect">
+            <label>Ключ клиента (sslkey)</label>
+            <div class="browse-wrap">
+              <input type="text" data-bind="globalprotect.userKey" placeholder="необязательно">
+              <div class="btn neutral" data-browse="globalprotect.userKey">Обзор…</div>
+            </div>
+          </div>
+          <div class="field" data-for="globalprotect">
+            <label>Сертификат сервера (servercert)</label>
+            <input type="text" class="mono" data-bind="globalprotect.serverCert" placeholder="pin-sha256:… — заполнится сам при первом подключении">
           </div>
         </div>
 
         <div class="form" id="viewAdvanced" hidden>
-          <div class="toggle-row">
+          <div class="toggle-row" data-for="fortinet">
             <div>
               <div class="toggle-title">Настраивать DNS через туннель</div>
               <div class="toggle-desc">set-dns</div>
             </div>
-            <div class="switch" id="f-setDns"><div class="knob"></div></div>
+            <div class="switch" data-switch="fortinet.setDns"><div class="knob"></div></div>
           </div>
-          <div class="toggle-row">
+          <div class="toggle-row" data-for="fortinet">
             <div>
               <div class="toggle-title">Использовать peer DNS в pppd</div>
               <div class="toggle-desc">pppd-use-peerdns</div>
             </div>
-            <div class="switch" id="f-pppdUsePeerdns"><div class="knob"></div></div>
+            <div class="switch" data-switch="fortinet.pppdUsePeerdns"><div class="knob"></div></div>
           </div>
-          <div class="toggle-row">
+          <div class="toggle-row" data-for="fortinet">
             <div>
               <div class="toggle-title">Настраивать маршруты</div>
               <div class="toggle-desc">set-routes</div>
             </div>
-            <div class="switch" id="f-setRoutes"><div class="knob"></div></div>
+            <div class="switch" data-switch="fortinet.setRoutes"><div class="knob"></div></div>
           </div>
-          <div class="toggle-row">
+          <div class="toggle-row" data-for="fortinet">
             <div>
               <div class="toggle-title">Два маршрута /1 вместо замены default route</div>
               <div class="toggle-desc">half-internet-routes</div>
             </div>
-            <div class="switch" id="f-halfInternetRoutes"><div class="knob"></div></div>
+            <div class="switch" data-switch="fortinet.halfInternetRoutes"><div class="knob"></div></div>
           </div>
-          <div class="field bordered-top">
+          <div class="field bordered-top" data-for="fortinet">
             <label>Файл лога pppd (pppd-log)</label>
-            <input type="text" id="f-pppdLog" placeholder="/var/log/pppd.log (необязательно)">
+            <input type="text" data-bind="fortinet.pppdLog" placeholder="/var/log/pppd.log (необязательно)">
+          </div>
+          <div class="toggle-row" data-for="globalprotect">
+            <div>
+              <div class="toggle-title">Отправлять HIP report</div>
+              <div class="toggle-desc">csd-wrapper hipreport.sh — нужен, если шлюз проверяет состояние компьютера и рвёт соединение без отчёта</div>
+            </div>
+            <div class="switch" data-switch="globalprotect.hipReport"><div class="knob"></div></div>
           </div>
         </div>
 
@@ -194,7 +245,7 @@
 
         <div class="log-view" id="viewLog" hidden>
           <div class="log-header">
-            <div>Вывод openfortivpn / pppd</div>
+            <div id="logTitle">Вывод openfortivpn / pppd</div>
             <div class="link" id="clearLogBtn">Очистить</div>
           </div>
           <div class="log-panel" id="logPanel"></div>
@@ -228,6 +279,26 @@
         <div class="otp-sub"><span class="link" id="aboutGithub"></span></div>
         <div class="otp-actions">
           <div class="btn primary" id="aboutCloseBtn">Закрыть</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="otp-overlay" id="typeOverlay" hidden>
+      <div class="otp-modal type-modal">
+        <div class="otp-title">Новый профиль</div>
+        <div class="otp-sub">Выберите тип VPN. Изменить его у профиля потом нельзя.</div>
+        <div class="type-options">
+          <div class="type-option" data-type="fortinet">
+            <div class="type-name">Fortinet SSL-VPN</div>
+            <div class="type-desc">FortiGate · через openfortivpn</div>
+          </div>
+          <div class="type-option" data-type="globalprotect">
+            <div class="type-name">GlobalProtect</div>
+            <div class="type-desc">Palo Alto Networks · через OpenConnect</div>
+          </div>
+        </div>
+        <div class="otp-actions">
+          <div class="btn neutral" id="typeCancelBtn">Отмена</div>
         </div>
       </div>
     </div>

@@ -215,7 +215,11 @@ func (m *Manager) Connect(profileID string) error {
 	if profile.Host == "" {
 		return fmt.Errorf("profile has no host configured")
 	}
-	toolPath, err := m.components.ResolvePath("openfortivpn")
+	if profile.Type != ProfileTypeFortinet {
+		// Phase 4 of design/v2-plan.md wires GlobalProtect up to openconnect.
+		return fmt.Errorf("подключение GlobalProtect пока не реализовано")
+	}
+	toolPath, err := m.components.ResolvePath(componentForProfileType(profile.Type))
 	if err != nil {
 		return err
 	}
@@ -369,8 +373,8 @@ func (m *Manager) handleLine(conn *liveConnection, line string) {
 	// this just saves copy-pasting the hash by hand) so the next click on
 	// "Подключить" succeeds.
 	if match := untrustedCertRe.FindStringSubmatch(line); match != nil {
-		if profile, ok := m.store.Get(conn.profileID); ok && profile.TrustedCert == "" {
-			profile.TrustedCert = match[1]
+		if profile, ok := m.store.Get(conn.profileID); ok && profile.Fortinet != nil && profile.Fortinet.TrustedCert == "" {
+			profile.Fortinet.TrustedCert = match[1]
 			if err := m.store.Update(profile); err == nil {
 				conn.addLog("Сертификат шлюза сохранён как доверенный (trusted-cert) — нажмите «Подключить» ещё раз")
 			}

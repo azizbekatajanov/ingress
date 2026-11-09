@@ -38,7 +38,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	if len(store.List()) == 0 {
-		if _, err := store.Add(); err != nil {
+		if _, err := store.Add(ProfileTypeFortinet); err != nil {
 			log.Printf("ingress: failed to create default profile: %v", err)
 		}
 	}
@@ -62,8 +62,10 @@ func (a *App) SelectProfile(id string) error {
 	return a.store.SetSelectedID(id)
 }
 
-func (a *App) AddProfile() (Profile, error) {
-	p, err := a.store.Add()
+// AddProfile creates a profile of the given type (ProfileType*); the type
+// can't be changed afterwards.
+func (a *App) AddProfile(profileType string) (Profile, error) {
+	p, err := a.store.Add(profileType)
 	if a.tray != nil {
 		a.tray.OnProfilesChanged()
 	}

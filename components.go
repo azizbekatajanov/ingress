@@ -57,6 +57,14 @@ func lookupComponent(name string) (componentInfo, bool) {
 	return componentInfo{}, false
 }
 
+// componentForProfileType is the binary a profile of that type runs.
+func componentForProfileType(profileType string) string {
+	if profileType == ProfileTypeGlobalProtect {
+		return "openconnect"
+	}
+	return "openfortivpn"
+}
+
 func platformKey() string { return runtime.GOOS + "/" + runtime.GOARCH }
 
 func componentsDir() string           { return filepath.Join(componentsBaseDir(), "components") }

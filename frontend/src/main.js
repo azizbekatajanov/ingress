@@ -9,6 +9,7 @@ import {
 } from '../wailsjs/go/main/App';
 import { EventsOn, BrowserOpenURL } from '../wailsjs/runtime/runtime';
 
+const TYPE_LABELS = { fortinet: 'Fortinet', globalprotect: 'GlobalProtect' };
 const PROFILE_COLORS = ['#ff6961', '#5ac8fa', '#ffd60a', '#bf5af2', '#30d158', '#ff9f0a'];
 
 const state = {
@@ -54,6 +55,21 @@ function formatBytes(n) {
   return (n/1024/1024).toFixed(2) + ' МБ';
 }
 
+// Profile settings live in nested objects per VPN type (profile.fortinet /
+// profile.globalprotect); form controls name them by dotted path in
+// data-bind / data-switch / data-browse.
+function getSetting(p, path) { return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), p); }
+function setSetting(p, path, value) {
+  const keys = path.split('.');
+  let o = p;
+  keys.slice(0, -1).forEach(k => { if (o[k] == null) o[k] = {}; o = o[k]; });
+  o[keys[keys.length - 1]] = value;
+}
+function hostLine(p) {
+  const where = p.host ? `${p.host}:${p.port}` : 'не настроен';
+  return `${TYPE_LABELS[p.type] || ''} · ${where}`;
+}
+
 // ---- backend-driven actions ----
 async function startConnect(id) {
   try { await Connect(id); } catch (e) { alert('Не удалось подключиться: ' + errText(e)); }
@@ -65,11 +81,15 @@ async function submitOtp(id) {
   try { await SubmitOtp(id, state.otpCode); state.otpCode = ''; } catch (e) { alert('Ошибка проверки кода: ' + e); }
 }
 
-async function addProfile() {
-  const p = await AddProfile();
+function addProfile() { $('#typeOverlay').hidden = false; }
+async function createProfile(type) {
+  $('#typeOverlay').hidden = true;
+  let p;
+  try { p = await AddProfile(type); } catch (e) { alert('Не удалось создать профиль: ' + errText(e)); return; }
   state.profiles.push(p);
   state.selectedProfileId = p.id;
-  state.activeTab = 'general'; state.showSettings = false;
+  // Straight into settings: a fresh profile has nothing to show yet.
+  state.activeTab = 'general'; state.showSettings = true;
   render();
 }
 let pendingDeleteId = null;
@@ -155,7 +175,7 @@ function render() {
     paintAvatar(avatar, p, PROFILE_COLORS[i % PROFILE_COLORS.length]);
     const info = el('div', 'profile-info');
     info.appendChild(el('div', 'profile-name', p.name));
-    info.appendChild(el('div', 'profile-host', p.host ? `${p.host}:${p.port}` : 'не настроен'));
+    info.appendChild(el('div', 'profile-host', hostLine(p)));
     row.appendChild(avatar); row.appendChild(info);
     if (pStatus === 'connected') row.appendChild(el('div', 'status-dot connected'));
     if (pStatus === 'connecting' || pStatus === 'otp') row.appendChild(el('div', 'status-dot connecting'));
@@ -175,7 +195,7 @@ function render() {
     if (p.id === state.selectedProfileId) opt.selected = true;
     profileSelectEl.appendChild(opt);
   });
-  $('#hostLine').textContent = sp ? (sp.host ? `${sp.host}:${sp.port}` : 'не настроен') : '';
+  $('#hostLine').textContent = sp ? hostLine(sp) : '';
 
   // status pill + connect button
   const pill = $('#statusPill'); const btn = $('#connectBtn');
@@ -218,7 +238,7 @@ function render() {
   if (showOverview) {
     paintAvatar($('#overviewAvatar'), sp, PROFILE_COLORS[selIdx % PROFILE_COLORS.length]);
     $('#overviewName').textContent = sp.name;
-    $('#overviewHost').textContent = sp.host ? `${sp.host}:${sp.port}` : 'не настроен';
+    $('#overviewHost').textContent = hostLine(sp);
     renderInstallBanner(sp);
     renderErrorBanner(snap);
   }
@@ -226,7 +246,10 @@ function render() {
 
   if (sp && !isConnected) fillForm(sp);
   if (isConnected && state.activeTab === 'status') fillStatus(sp, snap);
-  if (isConnected && state.activeTab === 'log') fillLog(snap);
+  if (isConnected && state.activeTab === 'log') {
+    $('#logTitle').textContent = sp.type === 'globalprotect' ? 'Вывод openconnect' : 'Вывод openfortivpn / pppd';
+    fillLog(snap);
+  }
 
   // OTP modal
   const otp = otpProfile();
@@ -257,8 +280,7 @@ function renderErrorBanner(snap) {
 const SOURCE_LABELS = { managed: 'встроенная сборка', override: 'свой путь', system: 'системный' };
 
 function componentByName(name) { return state.components.find(c => c.name === name); }
-// Phase 2 adds profile types; until then every profile is Fortinet.
-function componentForProfile(p) { return 'openfortivpn'; }
+function componentForProfile(p) { return p.type === 'globalprotect' ? 'openconnect' : 'openfortivpn'; }
 
 // Wails rejects bound-method promises with an Error whose message is the Go
 // error text; String(e) would prefix it with "Error: ".
@@ -460,17 +482,22 @@ function fillForm(p) {
   }
   $('#f-password').type = state.showPassword ? 'text' : 'password';
   $('#togglePassword').textContent = state.showPassword ? 'Скрыть' : 'Показать';
-  $('#f-realm').value = p.realm;
-  $('#f-caFile').value = p.caFile;
-  $('#f-userCert').value = p.userCert;
-  $('#f-userKey').value = p.userKey;
-  $('#f-trustedCert').value = p.trustedCert;
-  $('#f-insecureSsl').classList.toggle('on', p.insecureSsl);
-  $('#f-setDns').classList.toggle('on', p.setDns);
-  $('#f-pppdUsePeerdns').classList.toggle('on', p.pppdUsePeerdns);
-  $('#f-setRoutes').classList.toggle('on', p.setRoutes);
-  $('#f-halfInternetRoutes').classList.toggle('on', p.halfInternetRoutes);
-  $('#f-pppdLog').value = p.pppdLog;
+
+  const gp = p.type === 'globalprotect';
+  $('#f-host-label').textContent = gp ? 'Адрес портала' : 'Адрес сервера (host)';
+  // SAML logs in through the IdP's page, there's no password to store.
+  $('#f-password-field').hidden = gp && getSetting(p, 'globalprotect.auth') === 'saml';
+  document.querySelectorAll('[data-for]').forEach(n => {
+    let show = n.dataset.for === p.type;
+    if (show && n.dataset.connectTo) show = getSetting(p, 'globalprotect.connectTo') === n.dataset.connectTo;
+    n.hidden = !show;
+  });
+  document.querySelectorAll('[data-bind]').forEach(n => {
+    if (document.activeElement === n) return; // don't fight the cursor while typing
+    const v = getSetting(p, n.dataset.bind);
+    n.value = v == null ? '' : v;
+  });
+  document.querySelectorAll('[data-switch]').forEach(n => n.classList.toggle('on', !!getSetting(p, n.dataset.switch)));
 }
 function fillStatus(p, snap) {
   $('#statusDuration').textContent = formatDuration(snap.connectSeconds || 0);
@@ -524,12 +551,12 @@ document.querySelectorAll('[data-browse]').forEach(b => b.onclick = async () => 
   const sp = selected(); if (!sp) return;
   const path = await BrowseFile('Выберите файл').catch(() => '');
   if (!path) return;
-  sp[b.dataset.browse] = path;
+  setSetting(sp, b.dataset.browse, path);
   scheduleSave(sp);
   render();
 });
 
-['name','host','port','username','realm','caFile','userCert','userKey','trustedCert','pppdLog'].forEach(key => {
+['name','host','port','username'].forEach(key => {
   const input = document.getElementById('f-' + key);
   if (input) input.addEventListener('input', e => {
     const sp = selected(); if (!sp) return;
@@ -543,10 +570,26 @@ $('#f-password').addEventListener('input', e => {
   state.passwords[sp.id] = e.target.value;
   schedulePasswordSave(sp.id, e.target.value);
 });
-['insecureSsl','setDns','pppdUsePeerdns','setRoutes','halfInternetRoutes'].forEach(key => {
-  const sw = document.getElementById('f-' + key);
-  if (sw) sw.onclick = () => { const sp = selected(); if (!sp) return; sp[key] = !sp[key]; scheduleSave(sp); render(); };
+document.querySelectorAll('[data-bind]').forEach(n => {
+  n.addEventListener(n.tagName === 'SELECT' ? 'change' : 'input', e => {
+    const sp = selected(); if (!sp) return;
+    setSetting(sp, n.dataset.bind, e.target.value);
+    scheduleSave(sp);
+    if (n.tagName === 'SELECT') render(); // auth/connectTo change which fields show
+  });
 });
+document.querySelectorAll('[data-switch]').forEach(sw => {
+  sw.onclick = () => {
+    const sp = selected(); if (!sp) return;
+    setSetting(sp, sw.dataset.switch, !getSetting(sp, sw.dataset.switch));
+    scheduleSave(sp);
+    render();
+  };
+});
+
+// ---- new profile type picker ----
+document.querySelectorAll('.type-option').forEach(o => o.onclick = () => createProfile(o.dataset.type));
+$('#typeCancelBtn').onclick = () => { $('#typeOverlay').hidden = true; };
 
 // ---- profile logo ----
 function replaceProfile(updated) {

@@ -2,26 +2,49 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 )
 
-// Profile holds one VPN profile's non-secret configuration.
+// Profile types. A profile's type is chosen when it's created and never
+// changes afterwards (Update keeps the stored one) — switching protocols
+// means a different set of settings, so it's a new profile.
+const (
+	ProfileTypeFortinet      = "fortinet"
+	ProfileTypeGlobalProtect = "globalprotect"
+)
+
+func validProfileType(t string) bool {
+	return t == ProfileTypeFortinet || t == ProfileTypeGlobalProtect
+}
+
+// Profile holds one VPN profile's non-secret configuration: the fields every
+// VPN type shares at the top, protocol-specific settings in the nested struct
+// matching Type (the other one is always nil).
 // Password is intentionally excluded — it lives in the OS keychain, see credentials.go.
 type Profile struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
+	Type     string `json:"type"`
 	Host     string `json:"host"`
 	Port     string `json:"port"`
 	Username string `json:"username"`
-	Realm    string `json:"realm"`
 	// Logo reports that logos/<id>.png exists (see logo.go). Managed only by
 	// SetLogo — Update ignores the incoming value so a debounced save from a
 	// stale frontend copy can't wipe it.
 	Logo bool `json:"logo"`
 
+	Fortinet      *FortinetSettings      `json:"fortinet,omitempty"`
+	GlobalProtect *GlobalProtectSettings `json:"globalprotect,omitempty"`
+}
+
+// FortinetSettings maps 1:1 onto openfortivpn's config file (see
+// openfortivpn_config.go).
+type FortinetSettings struct {
+	Realm       string `json:"realm"`
 	CaFile      string `json:"caFile"`
 	UserCert    string `json:"userCert"`
 	UserKey     string `json:"userKey"`
@@ -35,14 +58,79 @@ type Profile struct {
 	PppdLog            string `json:"pppdLog"`
 }
 
-func defaultProfile(id string) Profile {
-	return Profile{
-		ID:        id,
-		Name:      "Новый профиль",
-		Port:      "443",
-		SetDns:    true,
-		SetRoutes: true,
+// GlobalProtect auth methods and connection targets.
+const (
+	GPAuthAuto     = "auto" // decided per connect from the portal's prelogin.esp
+	GPAuthPassword = "password"
+	GPAuthSAML     = "saml"
+
+	GPConnectPortal  = "portal"
+	GPConnectGateway = "gateway"
+)
+
+// GlobalProtectSettings is what openconnect --protocol=gp needs (wired up in
+// a later phase; see design/v2-plan.md).
+type GlobalProtectSettings struct {
+	Auth      string `json:"auth"`      // GPAuth*
+	ConnectTo string `json:"connectTo"` // GPConnect*
+	// Gateway is the gateway picked from the portal's list last time
+	// (openconnect --authgroup); empty means ask.
+	Gateway string `json:"gateway"`
+	// ServerCert pins the server certificate (openconnect --servercert,
+	// "pin-sha256:..."), auto-filled like Fortinet's trusted-cert.
+	ServerCert string `json:"serverCert"`
+	HipReport  bool   `json:"hipReport"`
+	CaFile     string `json:"caFile"`
+	UserCert   string `json:"userCert"`
+	UserKey    string `json:"userKey"`
+}
+
+func defaultFortinetSettings() *FortinetSettings {
+	return &FortinetSettings{SetDns: true, SetRoutes: true}
+}
+
+func defaultGlobalProtectSettings() *GlobalProtectSettings {
+	return &GlobalProtectSettings{Auth: GPAuthAuto, ConnectTo: GPConnectPortal}
+}
+
+func defaultProfile(id, profileType string) Profile {
+	p := Profile{ID: id, Name: "Новый профиль", Type: profileType, Port: "443"}
+	normalizeProfile(&p)
+	return p
+}
+
+// normalizeProfile enforces the Type ↔ nested-settings invariant: the
+// settings struct for p.Type exists (defaults if missing), the other is nil.
+func normalizeProfile(p *Profile) {
+	if !validProfileType(p.Type) {
+		p.Type = ProfileTypeFortinet
 	}
+	switch p.Type {
+	case ProfileTypeFortinet:
+		if p.Fortinet == nil {
+			p.Fortinet = defaultFortinetSettings()
+		}
+		p.GlobalProtect = nil
+	case ProfileTypeGlobalProtect:
+		if p.GlobalProtect == nil {
+			p.GlobalProtect = defaultGlobalProtectSettings()
+		}
+		gp := p.GlobalProtect
+		if gp.Auth != GPAuthPassword && gp.Auth != GPAuthSAML {
+			gp.Auth = GPAuthAuto
+		}
+		if gp.ConnectTo != GPConnectGateway {
+			gp.ConnectTo = GPConnectPortal
+		}
+		p.Fortinet = nil
+	}
+}
+
+// legacyProfile is the 1.0.x on-disk shape: no type, Fortinet settings flat
+// on the profile. Only read during migration.
+type legacyProfile struct {
+	Type string `json:"type"`
+	FortinetSettings
 }
 
 // profileConfig is the on-disk shape of profiles.json.
@@ -93,7 +181,51 @@ func (s *ProfileStore) load() error {
 	if err := json.Unmarshal(data, &s.cfg); err != nil {
 		return err
 	}
+	migrated, err := migrateProfiles(data, s.cfg.Profiles)
+	if err != nil {
+		return err
+	}
+	if migrated {
+		// Keep the 1.0.x file as it was: downgrading to 1.0.x would read the
+		// new nested format as "all settings empty". Never overwrite an
+		// existing backup (it's the oldest, most useful one).
+		backup := filepath.Join(filepath.Dir(s.path), "profiles.v1.json")
+		if _, err := os.Stat(backup); os.IsNotExist(err) {
+			if err := os.WriteFile(backup, data, 0o600); err != nil {
+				return fmt.Errorf("backing up profiles before migration: %w", err)
+			}
+		}
+		return s.save()
+	}
 	return nil
+}
+
+// migrateProfiles upgrades 1.0.x profiles (no "type", flat Fortinet fields)
+// in place, reading the flat fields from the raw file data. Reports whether
+// anything changed and the file needs rewriting.
+func migrateProfiles(data []byte, profiles []Profile) (bool, error) {
+	var raw struct {
+		Profiles []legacyProfile `json:"profiles"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return false, err
+	}
+	changed := false
+	for i := range profiles {
+		p := &profiles[i]
+		if p.Type == "" && i < len(raw.Profiles) {
+			p.Type = ProfileTypeFortinet
+			settings := raw.Profiles[i].FortinetSettings
+			p.Fortinet = &settings
+			changed = true
+		}
+		before := *p
+		normalizeProfile(p)
+		if before.Type != p.Type || (before.Fortinet == nil) != (p.Fortinet == nil) || (before.GlobalProtect == nil) != (p.GlobalProtect == nil) {
+			changed = true
+		}
+	}
+	return changed, nil
 }
 
 func (s *ProfileStore) save() error {
@@ -127,10 +259,13 @@ func (s *ProfileStore) Get(id string) (Profile, bool) {
 	return Profile{}, false
 }
 
-func (s *ProfileStore) Add() (Profile, error) {
+func (s *ProfileStore) Add(profileType string) (Profile, error) {
+	if !validProfileType(profileType) {
+		return Profile{}, fmt.Errorf("unknown profile type %q", profileType)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p := defaultProfile("p" + time.Now().Format("20060102150405.000000"))
+	p := defaultProfile("p"+time.Now().Format("20060102150405.000000"), profileType)
 	s.cfg.Profiles = append(s.cfg.Profiles, p)
 	s.cfg.SelectedProfileID = p.ID
 	return p, s.save()
@@ -142,6 +277,8 @@ func (s *ProfileStore) Update(p Profile) error {
 	for i, existing := range s.cfg.Profiles {
 		if existing.ID == p.ID {
 			p.Logo = existing.Logo
+			p.Type = existing.Type // immutable after creation
+			normalizeProfile(&p)
 			s.cfg.Profiles[i] = p
 			return s.save()
 		}
