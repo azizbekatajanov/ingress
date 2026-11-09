@@ -1,7 +1,7 @@
 import {
   GetProfiles, GetSelectedProfileID, SelectProfile, AddProfile, UpdateProfile, RemoveProfile,
   GetPassword, SetPassword, GetTheme, SetTheme,
-  Connect, Disconnect, CancelConnect, SubmitOtp, GetSnapshot,
+  Connect, Disconnect, CancelConnect, SubmitOtp, SubmitPrompt, GetSnapshot,
   GetComponents, InstallComponent, RemoveComponent, SetComponentOverride, BrowseFile,
   PickProfileLogo, RemoveProfileLogo, GetProfileLogos,
   WindowMinimise, WindowToggleFullscreen, HideWindow, ConfirmQuit,
@@ -43,6 +43,17 @@ function otpProfile() {
   if (sp && snapshotOf(sp.id).status === 'otp') return sp;
   return state.profiles.find(p => snapshotOf(p.id).status === 'otp');
 }
+// Statuses where a connect attempt is in progress (any of them blocks the
+// settings form and shows the "connecting" indicator).
+const PENDING_STATUSES = ['connecting', 'otp', 'choose'];
+function chooseProfile() {
+  const sp = selected();
+  if (sp && snapshotOf(sp.id).status === 'choose') return sp;
+  return state.profiles.find(p => snapshotOf(p.id).status === 'choose');
+}
+async function submitChoice(id, value) {
+  try { await SubmitPrompt(id, value); } catch (e) { alert('Не удалось отправить выбор: ' + errText(e)); }
+}
 function connectedProfiles() { return state.profiles.filter(p => snapshotOf(p.id).status === 'connected'); }
 
 function formatDuration(sec) {
@@ -78,7 +89,7 @@ async function cancelConnect(id) { try { await CancelConnect(id); } catch (e) { 
 async function disconnect(id) { try { await Disconnect(id); } catch (e) { /* ignore */ } }
 async function submitOtp(id) {
   if (!state.otpCode || state.otpCode.length < 4) return;
-  try { await SubmitOtp(id, state.otpCode); state.otpCode = ''; } catch (e) { alert('Ошибка проверки кода: ' + e); }
+  try { await SubmitOtp(id, state.otpCode); state.otpCode = ''; } catch (e) { alert('Ошибка проверки кода: ' + errText(e)); }
 }
 
 function addProfile() { $('#typeOverlay').hidden = false; }
@@ -161,7 +172,7 @@ function render() {
   // attempt itself was started from the tray while Settings was already open
   // for this profile. Both left the "Подключение…" card rendered directly
   // over the settings form, looking broken. Confirmed live via a screenshot.
-  if (snap && (snap.status === 'connecting' || snap.status === 'otp')) {
+  if (snap && PENDING_STATUSES.includes(snap.status)) {
     state.showSettings = false;
   }
 
@@ -178,7 +189,7 @@ function render() {
     info.appendChild(el('div', 'profile-host', hostLine(p)));
     row.appendChild(avatar); row.appendChild(info);
     if (pStatus === 'connected') row.appendChild(el('div', 'status-dot connected'));
-    if (pStatus === 'connecting' || pStatus === 'otp') row.appendChild(el('div', 'status-dot connecting'));
+    if (PENDING_STATUSES.includes(pStatus)) row.appendChild(el('div', 'status-dot connecting'));
     if (state.profiles.length > 1) {
       const del = el('div', 'delete-btn', '×');
       del.onclick = (e) => { e.stopPropagation(); askRemoveProfile(p.id); };
@@ -203,6 +214,7 @@ function render() {
   if (!sp) { pill.textContent = '—'; }
   else if (snap.status === 'connected') { pill.classList.add('connected'); pill.textContent = 'Подключено'; btn.className = 'btn danger'; btn.textContent = 'Отключить'; btn.onclick = () => disconnect(sp.id); }
   else if (snap.status === 'connecting') { pill.classList.add('pending'); pill.textContent = 'Подключение…'; btn.className = 'btn neutral'; btn.textContent = 'Подключение…'; btn.onclick = () => cancelConnect(sp.id); }
+  else if (snap.status === 'choose') { pill.classList.add('pending'); pill.textContent = 'Выбор шлюза'; btn.className = 'btn neutral'; btn.textContent = 'Выбор шлюза'; btn.onclick = () => cancelConnect(sp.id); }
   else if (snap.status === 'otp') { pill.classList.add('pending'); pill.textContent = 'Ожидание кода'; btn.className = 'btn neutral'; btn.textContent = 'Ожидание кода'; btn.onclick = () => cancelConnect(sp.id); }
   else { pill.textContent = 'Не подключено'; btn.textContent = 'Подключить'; btn.onclick = () => startConnect(sp.id); }
 
@@ -261,6 +273,26 @@ function render() {
     $('#otpProgressFill').style.width = Math.max(0, Math.min(100, (otpSnap.otpSecondsLeft/60)*100)) + '%';
     $('#otpTimer').textContent = `Код действителен ещё ${otpSnap.otpSecondsLeft} с`;
     $('#otpSubmitBtn').style.opacity = (!state.otpCode || state.otpCode.length < 4) ? 0.5 : 1;
+  }
+
+  // choice modal (e.g. GlobalProtect gateway)
+  const ch = otp ? null : chooseProfile();
+  $('#chooseOverlay').hidden = !ch;
+  if (ch) {
+    const chSnap = snapshotOf(ch.id);
+    $('#chooseTitle').textContent = chSnap.promptLabel === 'GATEWAY:' ? 'Выберите шлюз' : (chSnap.promptLabel || 'Выберите вариант').replace(/:$/, '');
+    $('#chooseTarget').textContent = ch.host ? `${ch.name} · ${ch.host}` : ch.name;
+    const box = $('#chooseOptions');
+    const key = ch.id + '|' + (chSnap.promptOptions || []).join('|');
+    if (box.dataset.key !== key) { // don't rebuild on every 1s tick
+      box.dataset.key = key;
+      box.innerHTML = '';
+      (chSnap.promptOptions || []).forEach(opt => {
+        const o = el('div', 'choose-option', opt);
+        o.onclick = () => submitChoice(ch.id, opt);
+        box.appendChild(o);
+      });
+    }
   }
 
   // theme switch
@@ -539,6 +571,7 @@ $('#disconnectBtn').onclick = () => { const sp = selected(); if (sp) disconnect(
 $('#clearLogBtn').onclick = () => { const sp = selected(); if (sp) { const s = snapshotOf(sp.id); s.logLines = []; render(); } };
 $('#otpCancelBtn').onclick = () => { const p = otpProfile(); if (p) cancelConnect(p.id); };
 $('#otpSubmitBtn').onclick = () => { const p = otpProfile(); if (p) submitOtp(p.id); };
+$('#chooseCancelBtn').onclick = () => { const p = chooseProfile(); if (p) cancelConnect(p.id); };
 $('#otpCode').addEventListener('input', e => { state.otpCode = e.target.value.toUpperCase().slice(0, 8); render(); });
 
 // window controls (frameless window — traffic lights are custom-drawn, see style.css)

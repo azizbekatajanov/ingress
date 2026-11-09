@@ -31,7 +31,7 @@ func (fortinetBackend) DefaultInterface() string { return "ppp0" }
 
 // Prepare passes credentials via a private 0600 temp config file
 // (`--config=`), never on argv.
-func (fortinetBackend) Prepare(p Profile, secret string) (backendLaunch, error) {
+func (fortinetBackend) Prepare(p Profile, secret, _ string) (backendLaunch, error) {
 	cfgPath, err := writeOpenfortivpnConfig(p, secret)
 	if err != nil {
 		return backendLaunch{}, fmt.Errorf("writing config: %w", err)
@@ -44,7 +44,7 @@ func (fortinetBackend) Prepare(p Profile, secret string) (backendLaunch, error) 
 	}, nil
 }
 
-func (fortinetBackend) Parse(line string) []lineEvent {
+func (fortinetBackend) Parse(line string, _ bool) []lineEvent {
 	var evs []lineEvent
 	if m := fortiErrorLineRe.FindStringSubmatch(line); m != nil {
 		evs = append(evs, lineEvent{Kind: evError, Value: m[1]})
@@ -75,3 +75,6 @@ func (fortinetBackend) SaveServerCert(p *Profile, cert string) string {
 	p.Fortinet.TrustedCert = cert
 	return "Сертификат шлюза сохранён как доверенный (trusted-cert) — нажмите «Подключить» ещё раз"
 }
+
+// openfortivpn never asks to choose between options.
+func (fortinetBackend) RememberChoice(*Profile, string, string) bool { return false }

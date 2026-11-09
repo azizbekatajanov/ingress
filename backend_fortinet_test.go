@@ -27,7 +27,7 @@ func TestFortinetParse(t *testing.T) {
 		{"    sha256 digest: a422fa7ce16631bff0b592a28556f993", nil},
 	}
 	for _, c := range cases {
-		if got := (fortinetBackend{}).Parse(c.line); !reflect.DeepEqual(got, c.want) {
+		if got := (fortinetBackend{}).Parse(c.line, false); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("Parse(%q) = %+v, want %+v", c.line, got, c.want)
 		}
 	}
@@ -36,7 +36,7 @@ func TestFortinetParse(t *testing.T) {
 func TestFortinetPrepareKeepsSecretsOffArgv(t *testing.T) {
 	p := defaultProfile("p1", ProfileTypeFortinet)
 	p.Host, p.Port = "vpn.example.com", "10443"
-	l, err := (fortinetBackend{}).Prepare(p, "hunter2")
+	l, err := (fortinetBackend{}).Prepare(p, "hunter2", "/usr/bin/openfortivpn")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,20 +77,20 @@ func TestManagerFortinetFlow(t *testing.T) {
 	p := defaultProfile("p1", ProfileTypeFortinet)
 	m, conn, events := newTestManager(t, p)
 
-	m.handleLine(conn, "INFO:   Connected to gateway.")
+	m.handleLine(conn, "INFO:   Connected to gateway.", false)
 	if conn.status != StatusConnecting {
 		t.Fatalf("status = %s", conn.status)
 	}
-	m.handleLine(conn, "Two-factor authentication token: ")
+	m.handleLine(conn, "Two-factor authentication token: ", true)
 	if conn.status != StatusOtp || conn.otpDeadline.IsZero() {
 		t.Fatalf("OTP prompt: status = %s", conn.status)
 	}
 	conn.status = StatusConnecting // what SubmitOtp does before writing the code
-	m.handleLine(conn, "local  IP address 10.211.1.20")
+	m.handleLine(conn, "local  IP address 10.211.1.20", false)
 	if conn.status != StatusConnected || conn.assignedIP != "10.211.1.20" || conn.iface != "ppp0" {
 		t.Fatalf("connected: status=%s ip=%s iface=%s", conn.status, conn.assignedIP, conn.iface)
 	}
-	m.handleLine(conn, "INFO:   Interface ppp3 is UP.")
+	m.handleLine(conn, "INFO:   Interface ppp3 is UP.", false)
 	if conn.iface != "ppp3" {
 		t.Errorf("iface = %s", conn.iface)
 	}
@@ -102,8 +102,8 @@ func TestManagerFortinetFlow(t *testing.T) {
 func TestManagerIgnoresPromptsWhileCancelling(t *testing.T) {
 	m, conn, _ := newTestManager(t, defaultProfile("p1", ProfileTypeFortinet))
 	conn.cancelling = true
-	m.handleLine(conn, "Two-factor authentication token: ")
-	m.handleLine(conn, "local  IP address 10.211.1.20")
+	m.handleLine(conn, "Two-factor authentication token: ", true)
+	m.handleLine(conn, "local  IP address 10.211.1.20", false)
 	if conn.status != StatusConnecting {
 		t.Errorf("status changed while cancelling: %s", conn.status)
 	}
@@ -114,8 +114,8 @@ func TestManagerSavesTrustedCertOnce(t *testing.T) {
 	m, conn, events := newTestManager(t, p)
 	cert := strings.Repeat("ab", 32)
 
-	m.handleLine(conn, "ERROR:  Gateway certificate validation failed, and the certificate digest is not in the local whitelist.")
-	m.handleLine(conn, "    --trusted-cert "+cert)
+	m.handleLine(conn, "ERROR:  Gateway certificate validation failed, and the certificate digest is not in the local whitelist.", false)
+	m.handleLine(conn, "    --trusted-cert "+cert, false)
 	got, _ := m.store.Get("p1")
 	if got.Fortinet.TrustedCert != cert {
 		t.Fatalf("trusted cert = %q", got.Fortinet.TrustedCert)
@@ -132,7 +132,7 @@ func TestManagerSavesTrustedCertOnce(t *testing.T) {
 	}
 
 	// An existing pin is never replaced automatically.
-	m.handleLine(conn, "    --trusted-cert "+strings.Repeat("cd", 32))
+	m.handleLine(conn, "    --trusted-cert "+strings.Repeat("cd", 32), false)
 	if got, _ := m.store.Get("p1"); got.Fortinet.TrustedCert != cert {
 		t.Error("existing trusted cert overwritten")
 	}

@@ -14,11 +14,18 @@ import "fmt"
 type vpnBackend interface {
 	// Component is the binary this backend runs (see components.go).
 	Component() string
-	// Prepare builds the client's argv (the resolved binary path is
-	// prepended by Manager) for profile p with its stored secret.
-	Prepare(p Profile, secret string) (backendLaunch, error)
+	// Prepare builds the client's argv for profile p with its stored secret.
+	// toolPath is the resolved binary (see ComponentManager.ResolvePath),
+	// for finding helper scripts installed next to it.
+	Prepare(p Profile, secret, toolPath string) (backendLaunch, error)
 	// Parse interprets one output line (ANSI codes already stripped).
-	Parse(line string) []lineEvent
+	// prompt is true when the line had no trailing newline and nothing
+	// followed it — i.e. the client is almost certainly blocked reading
+	// stdin (see Manager.pump).
+	Parse(line string, prompt bool) []lineEvent
+	// RememberChoice stores the answer to a PromptChoice in the profile so
+	// the next connect doesn't ask again. Returns whether p changed.
+	RememberChoice(p *Profile, label, choice string) bool
 	// SaveServerCert stores a server certificate identifier the client
 	// asked to be trusted, if the profile doesn't pin one yet. Returns the
 	// log message to show, or "" if nothing changed.
@@ -54,12 +61,26 @@ const (
 	// evServerCert: Value is a server certificate identifier to trust
 	// (see vpnBackend.SaveServerCert).
 	evServerCert
+	// evReply: write Value (plus newline) to the client's stdin — for
+	// prompts the backend answers itself.
+	evReply
+	// evFatal: the attempt can't succeed (e.g. the client re-asks for a
+	// password it was already given); Value is the reason. Manager records
+	// it as the error and stops the client.
+	evFatal
 )
 
 type lineEvent struct {
 	Kind   lineEventKind
 	Value  string
 	Prompt PromptKind
+	// Sticky (evError only): later non-sticky errors don't replace this
+	// one — for a clear explanation followed by the client's own generic
+	// failure lines.
+	Sticky bool
+	// Label and Options describe a PromptChoice.
+	Label   string
+	Options []string
 }
 
 // PromptKind is what kind of input the client is blocked on.
@@ -68,6 +89,8 @@ type PromptKind string
 const (
 	// PromptOTP: a one-time code (2FA). Shown as the OTP modal.
 	PromptOTP PromptKind = "otp"
+	// PromptChoice: pick one of Options (e.g. a GlobalProtect gateway).
+	PromptChoice PromptKind = "choice"
 )
 
 func backendFor(profileType string) (vpnBackend, error) {
@@ -75,8 +98,7 @@ func backendFor(profileType string) (vpnBackend, error) {
 	case ProfileTypeFortinet:
 		return fortinetBackend{}, nil
 	case ProfileTypeGlobalProtect:
-		// Phase 4 of design/v2-plan.md wires GlobalProtect up to openconnect.
-		return nil, fmt.Errorf("подключение GlobalProtect пока не реализовано")
+		return globalProtectBackend{}, nil
 	}
 	return nil, fmt.Errorf("неизвестный тип профиля %q", profileType)
 }

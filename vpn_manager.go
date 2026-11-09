@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"regexp"
 	"strings"
 	"sync"
@@ -35,7 +36,10 @@ const (
 	StatusDisconnected Status = "disconnected"
 	StatusConnecting   Status = "connecting"
 	StatusOtp          Status = "otp"
-	StatusConnected    Status = "connected"
+	// StatusChoose: the client is waiting for the user to pick one of
+	// ConnectionSnapshot.PromptOptions (e.g. a GlobalProtect gateway).
+	StatusChoose    Status = "choose"
+	StatusConnected Status = "connected"
 )
 
 type LogLine struct {
@@ -59,6 +63,9 @@ type ConnectionSnapshot struct {
 	// reaching "connected" were invisible in the UI (only visible via the
 	// stdout mirror in Terminal).
 	LastError string `json:"lastError"`
+	// PromptLabel/PromptOptions describe the pending choice (StatusChoose).
+	PromptLabel   string   `json:"promptLabel"`
+	PromptOptions []string `json:"promptOptions"`
 }
 
 const otpWindow = 60 * time.Second
@@ -94,9 +101,16 @@ type liveConnection struct {
 	otpDeadline time.Time
 	logLines    []LogLine
 	lastError   string
-	rxBytes     uint64
-	txBytes     uint64
-	done        chan struct{}
+	// errorSticky: lastError came from a sticky event (see lineEvent.Sticky).
+	errorSticky bool
+	// failed: the backend reported a fatal condition and Manager stopped the
+	// client itself — unlike a user cancel, the failure must still surface.
+	failed        bool
+	promptLabel   string
+	promptOptions []string
+	rxBytes       uint64
+	txBytes       uint64
+	done          chan struct{}
 	// cancelling is set the moment the user asks to cancel/disconnect, before
 	// the process has actually exited. openfortivpn can still have a line or
 	// two already in flight on its stdout at that point (e.g. the OTP prompt,
@@ -115,7 +129,9 @@ type Manager struct {
 	ctx context.Context
 	// events sends a frontend event; swapped out in tests (the Wails runtime
 	// needs a live app context).
-	events     func(name string, data ...interface{})
+	events func(name string, data ...interface{})
+	// showWindow brings the window forward (nil in tests).
+	showWindow func()
 	mu         sync.Mutex
 	conns      map[string]*liveConnection
 	store      *ProfileStore
@@ -125,8 +141,12 @@ type Manager struct {
 
 func NewManager(ctx context.Context, store *ProfileStore, components *ComponentManager) *Manager {
 	return &Manager{
-		ctx:        ctx,
-		events:     func(name string, data ...interface{}) { wailsRuntime.EventsEmit(ctx, name, data...) },
+		ctx:    ctx,
+		events: func(name string, data ...interface{}) { wailsRuntime.EventsEmit(ctx, name, data...) },
+		showWindow: func() {
+			wailsRuntime.WindowShow(ctx)
+			wailsRuntime.WindowUnminimise(ctx)
+		},
 		conns:      make(map[string]*liveConnection),
 		store:      store,
 		components: components,
@@ -164,6 +184,10 @@ func (c *liveConnection) snapshotLocked() ConnectionSnapshot {
 		TxBytes:    c.txBytes,
 		LogLines:   append([]LogLine(nil), c.logLines...),
 		LastError:  c.lastError,
+	}
+	if c.status == StatusChoose {
+		s.PromptLabel = c.promptLabel
+		s.PromptOptions = append([]string(nil), c.promptOptions...)
 	}
 	if c.status == StatusConnected {
 		s.ConnectSeconds = int(time.Since(c.startedAt).Seconds())
@@ -206,7 +230,7 @@ func (m *Manager) Connect(profileID string) error {
 		existing.mu.Lock()
 		st := existing.status
 		existing.mu.Unlock()
-		if st == StatusConnecting || st == StatusOtp || st == StatusConnected {
+		if st == StatusConnecting || st == StatusOtp || st == StatusChoose || st == StatusConnected {
 			return fmt.Errorf("profile already %s", st)
 		}
 	}
@@ -231,7 +255,7 @@ func (m *Manager) Connect(profileID string) error {
 		return fmt.Errorf("reading password from keychain: %w", err)
 	}
 
-	launch, err := backend.Prepare(profile, password)
+	launch, err := backend.Prepare(profile, password, toolPath)
 	if err != nil {
 		return err
 	}
@@ -329,13 +353,13 @@ func (m *Manager) pump(conn *liveConnection, r io.Reader) {
 		}
 	}()
 
-	emit := func(raw []byte) {
+	emit := func(raw []byte, prompt bool) {
 		line := ansiEscapeRe.ReplaceAllString(strings.TrimRight(string(raw), "\r\n"), "")
 		if conn.redact != "" && strings.Contains(line, conn.redact) {
 			line = strings.ReplaceAll(line, conn.redact, "••••••")
 		}
 		conn.addLog(line)
-		m.handleLine(conn, line)
+		m.handleLine(conn, line, prompt)
 	}
 
 	var pending []byte
@@ -348,7 +372,7 @@ func (m *Manager) pump(conn *liveConnection, r io.Reader) {
 		case res := <-reads:
 			if res.err != nil {
 				if len(pending) > 0 {
-					emit(pending)
+					emit(pending, false)
 				}
 				m.finish(conn)
 				return
@@ -359,60 +383,87 @@ func (m *Manager) pump(conn *liveConnection, r io.Reader) {
 				if idx < 0 {
 					break
 				}
-				emit(pending[:idx])
+				emit(pending[:idx], false)
 				pending = pending[idx+1:]
 			}
 		case <-timeout:
 			// Nothing further arrived in time — the buffered bytes are
 			// almost certainly a prompt awaiting input, not a truncated
 			// in-progress line. Flush them through as a synthetic line.
-			emit(pending)
+			emit(pending, true)
 			pending = nil
 		}
 	}
 }
 
 // handleLine applies what the backend reads into one output line to the
-// connection's state.
-func (m *Manager) handleLine(conn *liveConnection, line string) {
+// connection's state. prompt: see vpnBackend.Parse.
+func (m *Manager) handleLine(conn *liveConnection, line string, prompt bool) {
 	conn.mu.Lock()
 	status := conn.status
 	cancelling := conn.cancelling
 	conn.mu.Unlock()
 
 	promoted := false
-	for _, ev := range conn.backend.Parse(line) {
+	for _, ev := range conn.backend.Parse(line, prompt) {
 		switch ev.Kind {
 		case evError:
 			conn.mu.Lock()
-			conn.lastError = ev.Value
+			if ev.Sticky || !conn.errorSticky {
+				conn.lastError = ev.Value
+				conn.errorSticky = conn.errorSticky || ev.Sticky
+			}
 			conn.mu.Unlock()
+
+		case evFatal:
+			if !cancelling {
+				m.fail(conn, ev.Value)
+				return
+			}
+
+		case evReply:
+			if !cancelling {
+				if _, err := io.WriteString(conn.stdin, ev.Value+"\n"); err != nil {
+					conn.addLog(fmt.Sprintf("Не удалось ответить клиенту: %v", err))
+				}
+			}
 
 		case evServerCert:
 			if profile, ok := m.store.Get(conn.profileID); ok {
 				if msg := conn.backend.SaveServerCert(&profile, ev.Value); msg != "" {
 					if err := m.store.Update(profile); err == nil {
 						conn.addLog(msg)
-						// The frontend holds its own copy of the profile; without
-						// this its next debounced save would write the old (empty)
-						// value back over the one just stored.
-						if saved, ok := m.store.Get(conn.profileID); ok {
-							m.events("profile:updated", saved)
-						}
+						m.profileUpdated(conn.profileID)
 					}
 				}
 			}
 
 		case evPrompt:
-			if !cancelling && status == StatusConnecting && ev.Prompt == PromptOTP {
+			if cancelling || status != StatusConnecting {
+				continue
+			}
+			switch ev.Prompt {
+			case PromptOTP:
 				conn.mu.Lock()
 				conn.status = StatusOtp
 				conn.otpDeadline = time.Now().Add(otpWindow)
 				conn.mu.Unlock()
 				conn.addLog("Требуется одноразовый код (2FA)")
-				m.emit(conn)
-				return
+			case PromptChoice:
+				conn.mu.Lock()
+				conn.status = StatusChoose
+				conn.promptLabel = ev.Label
+				conn.promptOptions = ev.Options
+				conn.mu.Unlock()
+				conn.addLog(fmt.Sprintf("Требуется выбор: %s", ev.Label))
 			}
+			m.emit(conn)
+			// A connect started from the tray has no window on screen, and
+			// the client is now blocked until the user answers.
+			if m.showWindow != nil {
+				m.showWindow()
+			}
+			return
 
 		case evAssignedIP:
 			conn.mu.Lock()
@@ -436,10 +487,36 @@ func (m *Manager) handleLine(conn *liveConnection, line string) {
 		conn.mu.Lock()
 		conn.status = StatusConnected
 		conn.startedAt = time.Now()
+		// Errors the client recovered from on the way (retries, fallbacks)
+		// mustn't resurface later as the reason for a disconnect.
+		conn.lastError = ""
+		conn.errorSticky = false
 		conn.mu.Unlock()
 		conn.addLog("Туннель установлен")
 	}
 	m.emit(conn)
+}
+
+// fail records a fatal reason and stops the client. Unlike a user cancel,
+// finish() still surfaces it (window + error banner).
+func (m *Manager) fail(conn *liveConnection, reason string) {
+	conn.mu.Lock()
+	conn.lastError = reason
+	conn.errorSticky = true
+	conn.failed = true
+	conn.mu.Unlock()
+	conn.addLog("Ошибка: " + reason)
+	m.emit(conn)
+	m.terminate(conn.profileID)
+}
+
+func (m *Manager) profileUpdated(profileID string) {
+	// The frontend holds its own copy of the profile; without this its next
+	// debounced save would write the old value back over the one just
+	// stored.
+	if saved, ok := m.store.Get(profileID); ok {
+		m.events("profile:updated", saved)
+	}
 }
 
 // tick refreshes duration/traffic (while connected) or the OTP countdown
@@ -454,6 +531,9 @@ func (m *Manager) tick(conn *liveConnection) {
 		case <-ticker.C:
 			conn.mu.Lock()
 			status := conn.status
+			if status == StatusConnected && conn.iface == "" && conn.assignedIP != "" {
+				conn.iface = interfaceWithIP(conn.assignedIP)
+			}
 			iface := conn.iface
 			expired := status == StatusOtp && time.Now().After(conn.otpDeadline)
 			conn.mu.Unlock()
@@ -489,7 +569,7 @@ func (m *Manager) finish(conn *liveConnection) {
 	alreadyDisconnected := conn.status == StatusDisconnected
 	conn.status = StatusDisconnected
 	lastError := conn.lastError
-	cancelling := conn.cancelling
+	cancelling := conn.cancelling && !conn.failed
 	conn.mu.Unlock()
 	if !alreadyDisconnected {
 		conn.addLog("Отключено")
@@ -516,24 +596,85 @@ func (m *Manager) finish(conn *liveConnection) {
 	}
 }
 
-// SubmitOtp writes the user's 2FA code to the client's stdin, exactly where
-// it's waiting to read it.
-func (m *Manager) SubmitOtp(profileID, code string) error {
+// SubmitPrompt answers what the client is waiting for: a 2FA code
+// (StatusOtp) or one of the offered options (StatusChoose), written to its
+// stdin exactly where it's blocked reading. A chosen option is remembered in
+// the profile (see vpnBackend.RememberChoice).
+func (m *Manager) SubmitPrompt(profileID, value string) error {
 	conn := m.get(profileID)
 	if conn == nil {
 		return fmt.Errorf("no pending connection for profile %s", profileID)
 	}
 	conn.mu.Lock()
-	if conn.status != StatusOtp {
+	status := conn.status
+	label, options := conn.promptLabel, conn.promptOptions
+	if status != StatusOtp && status != StatusChoose {
 		conn.mu.Unlock()
-		return fmt.Errorf("profile is not awaiting an OTP code")
+		return fmt.Errorf("profile is not waiting for input")
+	}
+	if status == StatusChoose && !containsString(options, value) {
+		conn.mu.Unlock()
+		return fmt.Errorf("unknown option %q", value)
 	}
 	conn.status = StatusConnecting
+	conn.promptLabel, conn.promptOptions = "", nil
 	conn.mu.Unlock()
-	conn.addLog("Проверка одноразового кода...")
+
+	if status == StatusOtp {
+		conn.addLog("Проверка одноразового кода...")
+	} else {
+		conn.addLog(fmt.Sprintf("Выбрано: %s", value))
+		if profile, ok := m.store.Get(profileID); ok && conn.backend.RememberChoice(&profile, label, value) {
+			if err := m.store.Update(profile); err == nil {
+				m.profileUpdated(profileID)
+			}
+		}
+	}
 	m.emit(conn)
-	_, err := io.WriteString(conn.stdin, code+"\n")
+	_, err := io.WriteString(conn.stdin, value+"\n")
 	return err
+}
+
+// SubmitOtp is SubmitPrompt for the 2FA modal.
+func (m *Manager) SubmitOtp(profileID, code string) error {
+	return m.SubmitPrompt(profileID, code)
+}
+
+func containsString(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// interfaceWithIP finds the network interface holding ip (how the tunnel
+// interface is found for clients that don't print its name).
+func interfaceWithIP(ip string) string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, ifc := range ifaces {
+		addrs, err := ifc.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			var addrIP net.IP
+			switch v := a.(type) {
+			case *net.IPNet:
+				addrIP = v.IP
+			case *net.IPAddr:
+				addrIP = v.IP
+			}
+			if addrIP != nil && addrIP.String() == ip {
+				return ifc.Name
+			}
+		}
+	}
+	return ""
 }
 
 // CancelConnect and Disconnect both terminate the elevated client process

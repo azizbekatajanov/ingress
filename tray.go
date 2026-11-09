@@ -172,6 +172,8 @@ func (t *Tray) refreshItemLocked(profileID string) {
 		title += " — подключение…"
 	case StatusOtp:
 		title += " — код…"
+	case StatusChoose:
+		title += " — выбор шлюза…"
 	case StatusDisconnected:
 		// Otherwise a failed attempt looks identical to a profile that was
 		// simply never connected — the tray row was one of the places this

@@ -143,6 +143,11 @@ func (a *App) SubmitOtp(profileID, code string) error {
 	return a.manager.SubmitOtp(profileID, code)
 }
 
+// SubmitPrompt answers a pending choice (e.g. the GlobalProtect gateway).
+func (a *App) SubmitPrompt(profileID, value string) error {
+	return a.manager.SubmitPrompt(profileID, value)
+}
+
 func (a *App) GetSnapshot(profileID string) ConnectionSnapshot {
 	return a.manager.Snapshot(profileID)
 }
