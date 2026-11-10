@@ -15,10 +15,11 @@ import (
 const (
 	ProfileTypeFortinet      = "fortinet"
 	ProfileTypeGlobalProtect = "globalprotect"
+	ProfileTypeCisco         = "cisco"
 )
 
 func validProfileType(t string) bool {
-	return t == ProfileTypeFortinet || t == ProfileTypeGlobalProtect
+	return t == ProfileTypeFortinet || t == ProfileTypeGlobalProtect || t == ProfileTypeCisco
 }
 
 // Profile holds one VPN profile's non-secret configuration: the fields every
@@ -39,6 +40,21 @@ type Profile struct {
 
 	Fortinet      *FortinetSettings      `json:"fortinet,omitempty"`
 	GlobalProtect *GlobalProtectSettings `json:"globalprotect,omitempty"`
+	Cisco         *CiscoSettings         `json:"cisco,omitempty"`
+}
+
+// CiscoSettings is what openconnect --protocol=anyconnect needs (Cisco
+// Secure Client / AnyConnect, and ocserv servers).
+type CiscoSettings struct {
+	// Group is the connection profile ("tunnel group") picked last time
+	// (openconnect --authgroup); empty means ask.
+	Group string `json:"group"`
+	// ServerCert pins the server certificate (--servercert pin-sha256:...),
+	// auto-filled on first connect like GlobalProtect's.
+	ServerCert string `json:"serverCert"`
+	CaFile     string `json:"caFile"`
+	UserCert   string `json:"userCert"`
+	UserKey    string `json:"userKey"`
 }
 
 // FortinetSettings maps 1:1 onto openfortivpn's config file (see
@@ -111,6 +127,7 @@ func normalizeProfile(p *Profile) {
 			p.Fortinet = defaultFortinetSettings()
 		}
 		p.GlobalProtect = nil
+		p.Cisco = nil
 	case ProfileTypeGlobalProtect:
 		if p.GlobalProtect == nil {
 			p.GlobalProtect = defaultGlobalProtectSettings()
@@ -123,6 +140,13 @@ func normalizeProfile(p *Profile) {
 			gp.ConnectTo = GPConnectPortal
 		}
 		p.Fortinet = nil
+		p.Cisco = nil
+	case ProfileTypeCisco:
+		if p.Cisco == nil {
+			p.Cisco = &CiscoSettings{}
+		}
+		p.Fortinet = nil
+		p.GlobalProtect = nil
 	}
 }
 
@@ -221,7 +245,7 @@ func migrateProfiles(data []byte, profiles []Profile) (bool, error) {
 		}
 		before := *p
 		normalizeProfile(p)
-		if before.Type != p.Type || (before.Fortinet == nil) != (p.Fortinet == nil) || (before.GlobalProtect == nil) != (p.GlobalProtect == nil) {
+		if before.Type != p.Type || (before.Fortinet == nil) != (p.Fortinet == nil) || (before.GlobalProtect == nil) != (p.GlobalProtect == nil) || (before.Cisco == nil) != (p.Cisco == nil) {
 			changed = true
 		}
 	}

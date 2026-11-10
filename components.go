@@ -45,7 +45,7 @@ type componentInfo struct {
 
 var knownComponents = []componentInfo{
 	{Name: "openfortivpn", Title: "openfortivpn", VPN: "Fortinet SSL-VPN"},
-	{Name: "openconnect", Title: "OpenConnect", VPN: "GlobalProtect"},
+	{Name: "openconnect", Title: "OpenConnect", VPN: "GlobalProtect, Cisco"},
 }
 
 func lookupComponent(name string) (componentInfo, bool) {
@@ -59,7 +59,7 @@ func lookupComponent(name string) (componentInfo, bool) {
 
 // componentForProfileType is the binary a profile of that type runs.
 func componentForProfileType(profileType string) string {
-	if profileType == ProfileTypeGlobalProtect {
+	if profileType == ProfileTypeGlobalProtect || profileType == ProfileTypeCisco {
 		return "openconnect"
 	}
 	return "openfortivpn"

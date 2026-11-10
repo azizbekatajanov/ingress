@@ -9,7 +9,7 @@ import {
 } from '../wailsjs/go/main/App';
 import { EventsOn, BrowserOpenURL, ClipboardSetText } from '../wailsjs/runtime/runtime';
 
-const TYPE_LABELS = { fortinet: 'Fortinet', globalprotect: 'GlobalProtect' };
+const TYPE_LABELS = { fortinet: 'Fortinet', globalprotect: 'GlobalProtect', cisco: 'Cisco' };
 const PROFILE_COLORS = ['#ff6961', '#5ac8fa', '#ffd60a', '#bf5af2', '#30d158', '#ff9f0a'];
 
 const state = {
@@ -57,6 +57,8 @@ function chooseProfile() {
 async function submitChoice(id, value) {
   try { await SubmitPrompt(id, value); } catch (e) { alert('Не удалось отправить выбор: ' + errText(e)); }
 }
+const GENERIC_2FA_LABEL = /^(second\s+)?(password|passcode|pass\s*code|answer|response|otp|token|code|verification\s+code|пароль|код)$/i;
+function otpMinLength(snap) { return snap && snap.promptLabel ? 1 : 4; }
 function connectedProfiles() { return state.profiles.filter(p => snapshotOf(p.id).status === 'connected'); }
 
 function formatDuration(sec) {
@@ -92,7 +94,7 @@ async function startConnect(id) {
 async function cancelConnect(id) { try { await CancelConnect(id); } catch (e) { /* ignore */ } }
 async function disconnect(id) { try { await Disconnect(id); } catch (e) { /* ignore */ } }
 async function submitOtp(id) {
-  if (!state.otpCode || state.otpCode.length < 4) return;
+  if (!state.otpCode || state.otpCode.length < otpMinLength(snapshotOf(id))) return;
   try { await SubmitOtp(id, state.otpCode); state.otpCode = ''; } catch (e) { alert('Ошибка проверки кода: ' + errText(e)); }
 }
 
@@ -264,7 +266,7 @@ function render() {
   if (sp && !isConnected) fillForm(sp);
   if (isConnected && state.activeTab === 'status') fillStatus(sp, snap);
   if ((isConnected && state.activeTab === 'log') || showPastLog) {
-    $('#logTitle').textContent = sp.type === 'globalprotect' ? 'Вывод openconnect' : 'Вывод openfortivpn / pppd';
+    $('#logTitle').textContent = sp.type === 'fortinet' ? 'Вывод openfortivpn / pppd' : 'Вывод openconnect';
     fillLog(snap);
   }
 
@@ -273,11 +275,28 @@ function render() {
   $('#otpOverlay').hidden = !otp;
   if (otp) {
     const otpSnap = snapshotOf(otp.id);
+    // A server-defined field (Cisco second factor) comes with its label and
+    // message; a plain 2FA code (Fortinet, GlobalProtect) doesn't.
+    // Servers often name the second-factor field just "Password" (Cisco
+    // ASA does) — showing that reads like "your password again". Generic
+    // labels get a plain explanation instead; a specific one is shown as is.
+    const textPrompt = !!otpSnap.promptLabel;
+    const genericLabel = textPrompt && GENERIC_2FA_LABEL.test(otpSnap.promptLabel.trim());
+    $('#otpTitle').textContent = textPrompt ? (otpSnap.promptMessage || 'Требуется второй фактор') : 'Требуется код подтверждения';
+    $('#otpLabel').hidden = !textPrompt;
+    $('#otpLabel').textContent = !textPrompt ? ''
+      : genericLabel ? 'Введите одноразовый код или ответ сервера (например, push для Duo). Пароль уже отправлен.'
+      : `Сервер запрашивает: ${otpSnap.promptLabel}`;
     $('#otpTarget').textContent = `${otp.username || '—'}@${otp.host || '—'}`;
-    $('#otpCode').value = state.otpCode;
-    $('#otpProgressFill').style.width = Math.max(0, Math.min(100, (otpSnap.otpSecondsLeft/60)*100)) + '%';
-    $('#otpTimer').textContent = `Код действителен ещё ${otpSnap.otpSecondsLeft} с`;
-    $('#otpSubmitBtn').style.opacity = (!state.otpCode || state.otpCode.length < 4) ? 0.5 : 1;
+    const input = $('#otpCode');
+    input.maxLength = textPrompt ? 128 : 8;
+    input.placeholder = !textPrompt ? '000000' : genericLabel ? 'Код' : otpSnap.promptLabel;
+    input.inputMode = textPrompt ? 'text' : 'numeric';
+    input.value = state.otpCode;
+    const windowSec = textPrompt ? 120 : 60;
+    $('#otpProgressFill').style.width = Math.max(0, Math.min(100, (otpSnap.otpSecondsLeft/windowSec)*100)) + '%';
+    $('#otpTimer').textContent = `Ответ ждут ещё ${otpSnap.otpSecondsLeft} с`;
+    $('#otpSubmitBtn').style.opacity = (!state.otpCode || state.otpCode.length < otpMinLength(otpSnap)) ? 0.5 : 1;
   }
 
   // choice modal (e.g. GlobalProtect gateway)
@@ -331,7 +350,7 @@ async function copyLog(snap) {
 const SOURCE_LABELS = { managed: 'встроенная сборка', override: 'свой путь', system: 'системный' };
 
 function componentByName(name) { return state.components.find(c => c.name === name); }
-function componentForProfile(p) { return p.type === 'globalprotect' ? 'openconnect' : 'openfortivpn'; }
+function componentForProfile(p) { return (p.type === 'globalprotect' || p.type === 'cisco') ? 'openconnect' : 'openfortivpn'; }
 
 // Wails rejects bound-method promises with an Error whose message is the Go
 // error text; String(e) would prefix it with "Error: ".
@@ -592,7 +611,14 @@ $('#clearLogBtn').onclick = () => { const sp = selected(); if (sp) { const s = s
 $('#otpCancelBtn').onclick = () => { const p = otpProfile(); if (p) cancelConnect(p.id); };
 $('#otpSubmitBtn').onclick = () => { const p = otpProfile(); if (p) submitOtp(p.id); };
 $('#chooseCancelBtn').onclick = () => { const p = chooseProfile(); if (p) cancelConnect(p.id); };
-$('#otpCode').addEventListener('input', e => { state.otpCode = e.target.value.toUpperCase().slice(0, 8); render(); });
+$('#otpCode').addEventListener('input', e => {
+  const p = otpProfile();
+  const textPrompt = p && !!snapshotOf(p.id).promptLabel;
+  // Codes are case-insensitive and short; a server-defined answer (Duo's
+  // "push", a passphrase) is passed as typed.
+  state.otpCode = textPrompt ? e.target.value.slice(0, 128) : e.target.value.toUpperCase().slice(0, 8);
+  render();
+});
 
 // window controls (frameless window — traffic lights are custom-drawn, see style.css)
 $('#dotClose').onclick = () => HideWindow();

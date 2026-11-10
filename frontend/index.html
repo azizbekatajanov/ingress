@@ -122,6 +122,10 @@
               <option value="gateway">Напрямую к шлюзу</option>
             </select>
           </div>
+          <div class="field" data-for="cisco">
+            <label>Группа (connection profile)</label>
+            <input type="text" data-bind="cisco.group" placeholder="выбирается при первом подключении">
+          </div>
           <div class="field" data-for="globalprotect" data-connect-to="portal">
             <label>Шлюз</label>
             <input type="text" data-bind="globalprotect.gateway" placeholder="выбирается при первом подключении">
@@ -186,6 +190,31 @@
             <label>Сертификат сервера (servercert)</label>
             <input type="text" class="mono" data-bind="globalprotect.serverCert" placeholder="pin-sha256:… — заполнится сам при первом подключении">
           </div>
+          <div class="field" data-for="cisco">
+            <label>CA-сертификат (cafile)</label>
+            <div class="browse-wrap">
+              <input type="text" data-bind="cisco.caFile" placeholder="необязательно">
+              <div class="btn neutral" data-browse="cisco.caFile">Обзор…</div>
+            </div>
+          </div>
+          <div class="field" data-for="cisco">
+            <label>Клиентский сертификат (certificate)</label>
+            <div class="browse-wrap">
+              <input type="text" data-bind="cisco.userCert" placeholder="необязательно">
+              <div class="btn neutral" data-browse="cisco.userCert">Обзор…</div>
+            </div>
+          </div>
+          <div class="field" data-for="cisco">
+            <label>Ключ клиента (sslkey)</label>
+            <div class="browse-wrap">
+              <input type="text" data-bind="cisco.userKey" placeholder="необязательно">
+              <div class="btn neutral" data-browse="cisco.userKey">Обзор…</div>
+            </div>
+          </div>
+          <div class="field" data-for="cisco">
+            <label>Сертификат сервера (servercert)</label>
+            <input type="text" class="mono" data-bind="cisco.serverCert" placeholder="pin-sha256:… — заполнится сам при первом подключении">
+          </div>
         </div>
 
         <div class="form" id="viewAdvanced" hidden>
@@ -228,6 +257,9 @@
             </div>
             <div class="switch" data-switch="globalprotect.hipReport"><div class="knob"></div></div>
           </div>
+          <div class="field" data-for="cisco">
+            <div class="toggle-desc">Для Cisco дополнительных настроек пока нет.</div>
+          </div>
         </div>
 
         <div class="status-view" id="viewStatus" hidden>
@@ -260,8 +292,9 @@
     <div class="otp-overlay" id="otpOverlay" hidden>
       <div class="otp-modal">
         <div class="otp-icon">2FA</div>
-        <div class="otp-title">Требуется код подтверждения</div>
+        <div class="otp-title" id="otpTitle">Требуется код подтверждения</div>
         <div class="otp-sub" id="otpTarget"></div>
+        <div class="otp-sub" id="otpLabel" hidden></div>
         <input type="text" class="otp-input" id="otpCode" placeholder="000000" maxlength="8" autocomplete="one-time-code" inputmode="numeric">
         <div class="otp-progress"><div class="otp-progress-fill" id="otpProgressFill"></div></div>
         <div class="otp-timer" id="otpTimer">Код действителен ещё 60 с</div>
@@ -306,6 +339,10 @@
           <div class="type-option" data-type="fortinet">
             <div class="type-name">Fortinet SSL-VPN</div>
             <div class="type-desc">FortiGate · через openfortivpn</div>
+          </div>
+          <div class="type-option" data-type="cisco">
+            <div class="type-name">Cisco Secure Client</div>
+            <div class="type-desc">AnyConnect: Cisco ASA, FTD, ocserv · через OpenConnect</div>
           </div>
           <div class="type-option" data-type="globalprotect">
             <div class="type-name">GlobalProtect</div>

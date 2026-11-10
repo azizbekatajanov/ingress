@@ -35,18 +35,10 @@ type globalProtectBackend struct{}
 const gpGatewayLabel = "GATEWAY:"
 
 var (
-	gpConfiguredRe      = regexp.MustCompile(`^Configured as ([0-9A-Fa-f.:]+)`)
-	gpSelectRe          = regexp.MustCompile(`^(.+?)\s*\[(.+)\]:\s*$`)
-	gpServerCertRe      = regexp.MustCompile(`^\s*--servercert\s+(pin-sha256:[A-Za-z0-9+/=]+)\s*$`)
-	gpCertAskRe         = regexp.MustCompile(`^Enter 'yes' to accept, 'no' to abort`)
 	gpChallengeRe       = regexp.MustCompile(`(?i)^challenge:\s*$`)
 	gpAltSecretPromptRe = regexp.MustCompile(`^(prelogin-cookie|portal-userauthcookie|portal-prelogonuserauthcookie):\s*$`)
-	gpUsernameRe        = regexp.MustCompile(`(?i)^(username|user name|login|e-?mail)\s*:\s*$`)
 	gpSAMLRe            = regexp.MustCompile(`(?i)^SAML \S+ authentication is required via`)
-	// openconnect's closing summary after any auth failure (main.c); the
-	// real reason is printed before it.
-	gpGenericFailRe = regexp.MustCompile(`^(Failed to complete authentication|Failed to obtain WebVPN cookie)\.?$`)
-	gpHIPMissingRe  = regexp.MustCompile(`(?i)Server asked us to submit HIP report`)
+	gpHIPMissingRe      = regexp.MustCompile(`(?i)Server asked us to submit HIP report`)
 	// Server/client errors worth showing on the overview. openconnect's
 	// error output is free text (gpst.c prints the gateway's own <error>
 	// message verbatim), so this is a list of known shapes rather than a
@@ -227,20 +219,8 @@ func findHelper(dirs []string, name string) string {
 func (globalProtectBackend) Parse(line string, prompt bool) []lineEvent {
 	trimmed := strings.TrimSpace(line)
 
-	if m := gpServerCertRe.FindStringSubmatch(line); m != nil {
-		return []lineEvent{
-			{Kind: evServerCert, Value: m[1]},
-			{Kind: evError, Sticky: true, Value: "сертификат сервера не прошёл проверку — он сохранён в профиле, нажмите «Подключить» ещё раз, если доверяете этому серверу"},
-		}
-	}
-	if gpCertAskRe.MatchString(trimmed) {
-		// Never accept interactively: the pin is saved (evServerCert above)
-		// and the user reconnects deliberately, same as Fortinet's
-		// trusted-cert.
-		return []lineEvent{{Kind: evReply, Value: "no"}}
-	}
-	if m := gpConfiguredRe.FindStringSubmatch(trimmed); m != nil {
-		return []lineEvent{{Kind: evAssignedIP, Value: m[1]}}
+	if evs, ok := parseOpenconnectCommon(line, trimmed); ok {
+		return evs
 	}
 	if gpSAMLRe.MatchString(trimmed) {
 		return []lineEvent{{Kind: evFatal, Value: "сервер требует вход через SAML. Выберите способ входа «Автоматически» или «SAML»; если он уже выбран — значит, шлюз требует отдельный вход: выберите «Подключаться к: напрямую к шлюзу» и укажите адрес шлюза"}}
@@ -250,7 +230,7 @@ func (globalProtectBackend) Parse(line string, prompt bool) []lineEvent {
 	}
 
 	if prompt {
-		if m := gpSelectRe.FindStringSubmatch(trimmed); m != nil {
+		if m := ocSelectRe.FindStringSubmatch(trimmed); m != nil {
 			return []lineEvent{{Kind: evPrompt, Prompt: PromptChoice, Label: m[1], Options: strings.Split(m[2], "|")}}
 		}
 		if gpChallengeRe.MatchString(trimmed) {
@@ -261,7 +241,7 @@ func (globalProtectBackend) Parse(line string, prompt bool) []lineEvent {
 			// gateway wants its own SAML login, not the portal's cookie.
 			return []lineEvent{{Kind: evFatal, Value: "шлюз не принял вход, выполненный на портале, — он требует отдельный SAML-вход. Выберите «Подключаться к: напрямую к шлюзу» и укажите адрес шлюза"}}
 		}
-		if gpUsernameRe.MatchString(trimmed) {
+		if ocUsernameRe.MatchString(trimmed) {
 			return []lineEvent{{Kind: evFatal, Value: "сервер запросил имя пользователя — проверьте его в настройках профиля"}}
 		}
 		if strings.HasSuffix(trimmed, ":") {
@@ -274,14 +254,6 @@ func (globalProtectBackend) Parse(line string, prompt bool) []lineEvent {
 		}
 	}
 
-	if strings.Contains(trimmed, "unsafe legacy renegotiation disabled") {
-		// OpenSSL 3 without SSL_OP_LEGACY_SERVER_CONNECT; Ingress' own
-		// openconnect (ingress-deps patch 0002) connects to such servers.
-		return []lineEvent{{Kind: evError, Sticky: true, Value: "сервер не поддерживает безопасное пересогласование TLS (RFC 5746), а этот openconnect на OpenSSL 3 отказывается к нему подключаться — используйте встроенную сборку OpenConnect в «Компоненты»"}}
-	}
-	if gpGenericFailRe.MatchString(trimmed) {
-		return []lineEvent{{Kind: evError, Fallback: true, Value: trimmed}}
-	}
 	// ESP/DTLS problems fall back to TLS on their own — not errors.
 	if gpErrorRe.MatchString(trimmed) && !strings.Contains(trimmed, "ESP") && !strings.Contains(trimmed, "DTLS") {
 		return []lineEvent{{Kind: evError, Value: trimmed}}

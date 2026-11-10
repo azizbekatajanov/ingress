@@ -132,7 +132,7 @@ func TestMigrateFrom109(t *testing.T) {
 func TestAddAndUpdateKeepTypeInvariant(t *testing.T) {
 	s, _ := writeProfilesFile(t, `{"profiles": []}`)
 
-	if _, err := s.Add("cisco"); err == nil {
+	if _, err := s.Add("juniper"); err == nil {
 		t.Error("unknown type must be rejected")
 	}
 	gp, err := s.Add(ProfileTypeGlobalProtect)

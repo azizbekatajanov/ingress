@@ -121,6 +121,10 @@ const (
 	PromptOTP PromptKind = "otp"
 	// PromptChoice: pick one of Options (e.g. a GlobalProtect gateway).
 	PromptChoice PromptKind = "choice"
+	// PromptText: a server-defined field (Label) with the server's message
+	// (lineEvent.Value), e.g. a Cisco second factor ("Answer:", "Passcode:").
+	// Shown in the 2FA modal with the label and free-form input.
+	PromptText PromptKind = "text"
 )
 
 func backendFor(profileType string) (vpnBackend, error) {
@@ -129,6 +133,10 @@ func backendFor(profileType string) (vpnBackend, error) {
 		return fortinetBackend{}, nil
 	case ProfileTypeGlobalProtect:
 		return globalProtectBackend{}, nil
+	case ProfileTypeCisco:
+		// A fresh value per connection: it tracks the server's last form
+		// message/error between lines.
+		return &ciscoBackend{}, nil
 	}
 	return nil, fmt.Errorf("неизвестный тип профиля %q", profileType)
 }

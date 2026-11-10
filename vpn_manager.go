@@ -64,9 +64,12 @@ type ConnectionSnapshot struct {
 	// reaching "connected" were invisible in the UI (only visible via the
 	// stdout mirror in Terminal).
 	LastError string `json:"lastError"`
-	// PromptLabel/PromptOptions describe the pending choice (StatusChoose).
+	// PromptLabel/PromptOptions describe the pending choice (StatusChoose);
+	// PromptLabel/PromptMessage a server-defined text field (StatusOtp
+	// with a label — see PromptText). Empty label = classic 2FA code.
 	PromptLabel   string   `json:"promptLabel"`
 	PromptOptions []string `json:"promptOptions"`
+	PromptMessage string   `json:"promptMessage"`
 }
 
 const otpWindow = 60 * time.Second
@@ -117,6 +120,7 @@ type liveConnection struct {
 	failed        bool
 	promptLabel   string
 	promptOptions []string
+	promptMessage string
 	rxBytes       uint64
 	txBytes       uint64
 	done          chan struct{}
@@ -197,6 +201,10 @@ func (c *liveConnection) snapshotLocked() ConnectionSnapshot {
 	if c.status == StatusChoose {
 		s.PromptLabel = c.promptLabel
 		s.PromptOptions = append([]string(nil), c.promptOptions...)
+	}
+	if c.status == StatusOtp {
+		s.PromptLabel = c.promptLabel
+		s.PromptMessage = c.promptMessage
 	}
 	if c.status == StatusConnected {
 		s.ConnectSeconds = int(time.Since(c.startedAt).Seconds())
@@ -583,8 +591,17 @@ func (m *Manager) handleLine(conn *liveConnection, line string, prompt bool) {
 				conn.mu.Lock()
 				conn.status = StatusOtp
 				conn.otpDeadline = time.Now().Add(otpWindow)
+				conn.promptLabel, conn.promptMessage = "", ""
 				conn.mu.Unlock()
 				conn.addLog("Требуется одноразовый код (2FA)")
+			case PromptText:
+				conn.mu.Lock()
+				conn.status = StatusOtp
+				// Push-style factors (Duo "push") take longer than typing a code.
+				conn.otpDeadline = time.Now().Add(2 * otpWindow)
+				conn.promptLabel, conn.promptMessage = ev.Label, ev.Value
+				conn.mu.Unlock()
+				conn.addLog(fmt.Sprintf("Сервер запросил второй фактор (поле «%s»)", ev.Label))
 			case PromptChoice:
 				conn.mu.Lock()
 				conn.status = StatusChoose
@@ -767,11 +784,13 @@ func (m *Manager) SubmitPrompt(profileID, value string) error {
 		return fmt.Errorf("unknown option %q", value)
 	}
 	conn.status = StatusConnecting
-	conn.promptLabel, conn.promptOptions = "", nil
+	conn.promptLabel, conn.promptOptions, conn.promptMessage = "", nil, ""
 	conn.mu.Unlock()
 
-	if status == StatusOtp {
+	if status == StatusOtp && label == "" {
 		conn.addLog("Проверка одноразового кода...")
+	} else if status == StatusOtp {
+		conn.addLog("Отправка ответа серверу...")
 	} else {
 		conn.addLog(fmt.Sprintf("Выбрано: %s", value))
 		if profile, ok := m.store.Get(profileID); ok && conn.backend.RememberChoice(&profile, label, value) {
