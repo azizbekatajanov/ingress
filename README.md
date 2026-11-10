@@ -1,20 +1,25 @@
 # Ingress
 
-A native desktop VPN client for **Fortinet SSL-VPN** (via [openfortivpn](https://github.com/adrienverge/openfortivpn)) and **Palo Alto GlobalProtect** (via [OpenConnect](https://www.infradead.org/openconnect/)), including GlobalProtect **SAML** login. It can hold **multiple VPN profiles connected at the same time**, each with its own tunnel, log and status. The official FortiClient and GlobalProtect apps can't do that.
+A native desktop VPN client for **Fortinet SSL-VPN** (via [openfortivpn](https://github.com/adrienverge/openfortivpn)), **Palo Alto GlobalProtect** and **Cisco Secure Client / AnyConnect** (both via [OpenConnect](https://www.infradead.org/openconnect/)), including GlobalProtect **SAML** login. It can hold **multiple VPN profiles connected at the same time**, each with its own tunnel, log and status. The official FortiClient, GlobalProtect and Cisco apps can't do that.
 
 Built with [Wails](https://wails.io) (Go backend, vanilla JS/HTML/CSS frontend).
 
 ## Features
 
-- **Fortinet and GlobalProtect side by side.** Each profile has a type, Fortinet or GlobalProtect, chosen when it's created. Any mix of profiles can be connected in parallel, each as an independent client process.
+- **Fortinet, GlobalProtect and Cisco side by side.** Each profile has a type, chosen when it's created. Any mix of profiles can be connected in parallel, each as an independent client process.
 - **No Homebrew, no packages to install.** On the first connect of a profile type, Ingress downloads its own pinned build of the VPN client from [ingress-deps](https://github.com/azizbekatajanov/ingress-deps). It verifies the sha256 against a manifest compiled into the app. It installs the client into a root-owned directory (`/Library/Application Support/Ingress` on macOS, `/opt/ingress` on Linux). The directory chain is re-checked before every connect.
   - The openconnect build carries [openconnect!656](https://gitlab.com/openconnect/openconnect/-/merge_requests/656), which GlobalProtect SAML needs on many gateways.
   - openfortivpn is pinned to 1.20.5, because 1.21+ can't bring the tunnel up on macOS Sonoma+ ([#1165](https://github.com/adrienverge/openfortivpn/issues/1165)).
-  - The **Компоненты** screen shows what's installed and can install, update or remove a client. A custom binary path can be set per client. A system binary left over from 1.0.x keeps working until you choose.
+  - The **Components** screen shows what's installed and can install, update or remove a client. A custom binary path can be set per client. A system binary left over from 1.0.x keeps working until you choose.
 - **GlobalProtect**
   - Login with a password, or with **SAML** in Ingress' own login window. In "auto" mode Ingress asks the portal how to log in. The IdP session is remembered between logins.
   - Portal with a **gateway picker**: the choice is remembered. Connecting directly to a gateway is also supported.
   - 2FA challenges, server-certificate pinning (auto-filled on first connect), optional **HIP report**, client certificates.
+- **Cisco Secure Client (AnyConnect)**: Cisco ASA, FTD and ocserv servers.
+  - Group (connection profile) picker; the choice is remembered.
+  - Password plus a second factor: one-time codes, or answers such as Duo's `push`. The server's own prompt text is shown.
+  - Server-certificate pinning (auto-filled on first connect), client certificates.
+  - Not supported yet: SSO (SAML) and hostscan (CSD). Ingress says so instead of failing silently.
 - **Fortinet**
   - 2FA/OTP modal with a countdown.
   - realm, CA cert, client cert/key, trusted-cert (auto-filled when the gateway's cert is unknown), insecure-ssl.
@@ -29,13 +34,16 @@ Built with [Wails](https://wails.io) (Go backend, vanilla JS/HTML/CSS frontend).
 
 Download the latest build for your platform from the [Releases page](https://github.com/azizbekatajanov/ingress/releases).
 
-**macOS:** open the `.dmg` and drag Ingress into Applications. The build isn't notarized (no Apple Developer ID behind this project — it's a personal tool, not worth the $99/year), so **Gatekeeper will refuse to open it on first launch** ("Ingress" Not Opened — Apple could not verify "Ingress" is free of malware...). This is expected, not a broken build. To open it anyway:
+**macOS:** open the `.dmg` and drag Ingress into Applications. The build isn't notarized (there's no Apple Developer ID behind this project), so on first launch **macOS warns that it can't verify Ingress is free of malware** and offers to move it to the Trash. This is expected, not a broken download. To open it anyway, either:
 
-```bash
-xattr -cr /Applications/Ingress.app
-```
+- open **System Settings → Privacy & Security**, scroll down to the message about Ingress and click **Open Anyway**, then confirm; or
+- run this once in Terminal:
 
-or in Finder: right-click Ingress.app → **Open** (not a double-click) → confirm in the dialog that appears. Either only needs doing once, right after installing.
+  ```bash
+  xattr -cr /Applications/Ingress.app
+  ```
+
+Right-click → **Open** no longer bypasses the warning since macOS 15 (Sequoia). Either step only needs doing once per downloaded version.
 
 **Windows:** run the `-installer.exe`. Elevation with live log streaming isn't implemented yet (see the platform table below) — the UI works, but `Connect` returns an error.
 
@@ -100,7 +108,7 @@ Nothing user-specific lives in this repository. At runtime, Ingress stores:
   - `%AppData%/ingress` on Windows
   - `~/.config/ingress` on Linux
 - **Passwords** in the OS-native secure store (Keychain / Credential Manager / Secret Service). SAML cookies are never stored.
-- **Its own VPN clients** in `/Library/Application Support/Ingress/components` (macOS) or `/opt/ingress/components` (Linux), root-owned. Remove them from **Компоненты**.
+- **Its own VPN clients** in `/Library/Application Support/Ingress/components` (macOS) or `/opt/ingress/components` (Linux), root-owned. Remove them from **Components**.
 - **The SAML login window's web data** (the IdP session):
   - macOS: WebKit's default store for the app
   - Linux: `~/.local/share/ingress/saml-cookies.sqlite`
