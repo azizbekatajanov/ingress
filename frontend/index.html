@@ -52,6 +52,7 @@
       <div class="content" id="content">
 
         <div class="overview" id="viewOverview">
+          <div id="updateBanner"></div>
           <div id="installBanner"></div>
           <div id="errorBanner"></div>
           <div class="avatar-lg" id="overviewAvatar"></div>
@@ -327,6 +328,13 @@
           <label for="langSelect" data-i18n="ui.language">Language</label>
           <select id="langSelect"></select>
         </div>
+        <div class="about-update">
+          <div class="otp-sub" id="aboutUpdateLine"></div>
+          <div class="about-update-row">
+            <label class="quit-remember"><input type="checkbox" id="autoUpdateCheck"> <span data-i18n="ui.upd.auto">Check for updates automatically</span></label>
+            <div class="btn neutral" id="checkUpdatesBtn" data-i18n="ui.upd.check_now">Check now</div>
+          </div>
+        </div>
         <div class="otp-sub" id="aboutAuthor"></div>
         <div class="otp-sub"><span class="link" id="aboutGithub"></span></div>
         <div class="otp-actions">
@@ -367,6 +375,17 @@
         <div class="otp-sub"><span data-i18n="ui.comp.sources">Лицензии и исходники сборок:</span> <span class="link" id="componentsSources">github.com/azizbekatajanov/ingress-deps</span></div>
         <div class="otp-actions">
           <div class="btn primary" id="componentsCloseBtn" data-i18n="ui.done">Готово</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="otp-overlay" id="updateOverlay" hidden>
+      <div class="otp-modal">
+        <div class="otp-title" id="updateConfirmTitle"></div>
+        <div class="otp-sub" id="updateConfirmSub"></div>
+        <div class="otp-actions">
+          <div class="btn neutral" id="updateLaterBtn" data-i18n="ui.upd.later">Later</div>
+          <div class="btn primary" id="updateConfirmBtn" data-i18n="ui.upd.disconnect_update">Disconnect and update</div>
         </div>
       </div>
     </div>

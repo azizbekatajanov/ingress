@@ -6,6 +6,7 @@ import {
   PickProfileLogo, RemoveProfileLogo, GetProfileLogos,
   WindowMinimise, WindowToggleFullscreen, HideWindow, ConfirmQuit,
   GetAppInfo, GetI18n, SetLanguage,
+  GetUpdateStatus, CheckForUpdates, SetUpdateCheck, DismissUpdate, InstallUpdate,
 } from '../wailsjs/go/main/App';
 import { EventsOn, BrowserOpenURL, ClipboardSetText } from '../wailsjs/runtime/runtime';
 
@@ -58,6 +59,7 @@ const state = {
   componentProgress: {}, // name -> {phase, done, total} while installing/removing
   componentErrors: {}, // name -> last install/remove/override error message
   appInfo: null,
+  update: null, // UpdateStatus from updater.go
 };
 
 function selected() { return state.profiles.find(p => p.id === state.selectedProfileId); }
@@ -286,6 +288,7 @@ function render() {
     paintAvatar($('#overviewAvatar'), sp, PROFILE_COLORS[selIdx % PROFILE_COLORS.length]);
     $('#overviewName').textContent = sp.name;
     $('#overviewHost').textContent = hostLine(sp);
+    renderUpdateBanner();
     renderInstallBanner(sp);
     renderErrorBanner(snap);
   }
@@ -351,6 +354,56 @@ function render() {
   $('#themeToggle').classList.toggle('on', state.theme === 'dark');
 
   if (!$('#componentsOverlay').hidden) renderComponents();
+}
+
+// ---- in-app updates (updater.go) ----
+function renderUpdateBanner() {
+  const host = $('#updateBanner');
+  host.innerHTML = '';
+  const u = state.update;
+  if (!u) return;
+  if (u.phase) {
+    const pct = u.total > 0 ? ` ${Math.round(u.done / u.total * 100)}%` : '';
+    host.appendChild(el('div', 'banner', u.phase === 'downloading' ? t('js.upd.downloading', pct) : t('js.upd.installing')));
+    return;
+  }
+  if (!u.available || u.dismissed) return;
+  const b = el('div', 'banner', t('js.upd.available', u.version));
+  if (u.error) b.appendChild(el('div', 'banner-detail', t('js.upd.failed', u.error)));
+  else if (!u.canInstall && u.blocker) b.appendChild(el('div', 'banner-detail', u.blocker));
+  const actions = el('div', 'banner-actions');
+  if (u.canInstall) actions.appendChild(actionBtn('primary', t('js.upd.update'), startUpdate));
+  else actions.appendChild(actionBtn('primary', t('js.upd.download'), () => BrowserOpenURL(u.notesUrl)));
+  if (u.canInstall && u.notesUrl) actions.appendChild(actionBtn('neutral', t('js.upd.whats_new'), () => BrowserOpenURL(u.notesUrl)));
+  actions.appendChild(actionBtn('neutral', t('ui.upd.later'), () => DismissUpdate()));
+  b.appendChild(actions);
+  host.appendChild(b);
+}
+
+function startUpdate() {
+  const n = state.profiles.filter(p => snapshotOf(p.id).status !== 'disconnected').length;
+  if (n === 0) { runUpdate(false); return; }
+  $('#updateConfirmTitle').textContent = t('js.upd.confirm_title', state.update.version);
+  $('#updateConfirmSub').textContent = t('js.upd.confirm_sub', n);
+  $('#updateOverlay').hidden = false;
+}
+async function runUpdate(disconnectFirst) {
+  $('#updateOverlay').hidden = true;
+  try { await InstallUpdate(disconnectFirst); } catch (e) { /* shown in the banner via update:status */ }
+}
+
+function renderAboutUpdate() {
+  const u = state.update;
+  if (!u) return;
+  let line;
+  if (u.checking) line = t('js.upd.checking');
+  else if (u.available) line = t('js.upd.available', u.version);
+  else if (u.error) line = t('js.upd.check_failed', u.error);
+  else if (u.lastCheck) line = t('js.upd.latest', new Date(u.lastCheck).toLocaleString(i18n.language));
+  else line = '';
+  $('#aboutUpdateLine').textContent = line;
+  $('#autoUpdateCheck').checked = !!u.autoCheck;
+  $('#checkUpdatesBtn').style.opacity = u.checking ? 0.5 : 1;
 }
 
 function renderErrorBanner(snap) {
@@ -726,6 +779,7 @@ $('#deleteConfirmBtn').onclick = async () => {
 
 // ---- about ----
 function showAbout() {
+  renderAboutUpdate();
   if (state.appInfo) {
     $('#aboutVersion').textContent = t('js.about.version', state.appInfo.version);
     $('#aboutAuthor').textContent = t('js.about.author', state.appInfo.author);
@@ -734,6 +788,11 @@ function showAbout() {
   $('#aboutOverlay').hidden = false;
 }
 $('#aboutTrigger').onclick = showAbout;
+$('#checkUpdatesBtn').onclick = async () => { state.update = await CheckForUpdates(); renderAboutUpdate(); render(); };
+$('#autoUpdateCheck').onchange = (e) => SetUpdateCheck(e.target.checked).catch(err => alert(errText(err)));
+$('#updateLaterBtn').onclick = () => { $('#updateOverlay').hidden = true; };
+$('#updateConfirmBtn').onclick = () => runUpdate(true);
+EventsOn('update:status', (s) => { state.update = s; renderAboutUpdate(); render(); });
 $('#langSelect').onchange = async (e) => {
   try {
     setI18n(await SetLanguage(e.target.value));
@@ -807,9 +866,10 @@ EventsOn('profile:failed', (profileId) => {
 
 // ---- startup ----
 async function init() {
-  const [profiles, selectedId, theme, components, appInfo, logos, bundle] = await Promise.all([
-    GetProfiles(), GetSelectedProfileID(), GetTheme(), GetComponents(), GetAppInfo(), GetProfileLogos(), GetI18n(),
+  const [profiles, selectedId, theme, components, appInfo, logos, bundle, update] = await Promise.all([
+    GetProfiles(), GetSelectedProfileID(), GetTheme(), GetComponents(), GetAppInfo(), GetProfileLogos(), GetI18n(), GetUpdateStatus(),
   ]);
+  state.update = update;
   setI18n(bundle);
   state.logos = logos || {};
   state.profiles = profiles;

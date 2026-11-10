@@ -28,13 +28,23 @@ Built with [Wails](https://wails.io) (Go backend, vanilla JS/HTML/CSS frontend).
 - **Status tab**: connection duration, assigned IP, gateway, TX/RX bytes.
 - **Menu bar / tray icon** with per-profile quick connect/disconnect and a live "connected" badge.
 - **Passwords never touch disk.** They're stored in the OS keychain (Keychain/Credential Manager/Secret Service), not in the profile config file.
+- **English, Russian and Uzbek.** The language follows the system; change it in **About**.
+- **Updates from inside the app** (macOS): Ingress checks GitHub once a day and offers new versions in a banner; one click downloads, verifies and installs the update and restarts Ingress. Updates are signed (ed25519), so a release that isn't signed by the maintainer's key is refused.
 - Light/dark theme.
 
 ## Installation
 
 Download the latest build for your platform from the [Releases page](https://github.com/azizbekatajanov/ingress/releases).
 
-**macOS:** open the `.dmg` and drag Ingress into Applications. The build isn't notarized (there's no Apple Developer ID behind this project), so on first launch **macOS warns that it can't verify Ingress is free of malware** and offers to move it to the Trash. This is expected, not a broken download. To open it anyway, either:
+**macOS, one command** (recommended):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/azizbekatajanov/ingress/master/install.sh | bash
+```
+
+It picks the build for your Mac (Apple Silicon or Intel), checks it against the release's checksum, puts Ingress into Applications and opens it. Installed this way, macOS doesn't show the "can't verify the developer" warning, and Ingress updates itself from then on. Running it again updates an existing install.
+
+**macOS, disk image:** open the `.dmg` and drag Ingress into Applications. The build isn't notarized (there's no Apple Developer ID behind this project), so on first launch **macOS warns that it can't verify Ingress is free of malware** and offers to move it to the Trash. This is expected, not a broken download. To open it anyway, either:
 
 - open **System Settings → Privacy & Security**, scroll down to the message about Ingress and click **Open Anyway**, then confirm; or
 - run this once in Terminal:
@@ -43,7 +53,7 @@ Download the latest build for your platform from the [Releases page](https://git
   xattr -cr /Applications/Ingress.app
   ```
 
-Right-click → **Open** no longer bypasses the warning since macOS 15 (Sequoia). Either step only needs doing once per downloaded version.
+Right-click → **Open** no longer bypasses the warning since macOS 15 (Sequoia). Either step is needed once; after that Ingress updates itself without the warning.
 
 **Windows:** run the `-installer.exe`. Elevation with live log streaming isn't implemented yet (see the platform table below) — the UI works, but `Connect` returns an error.
 
@@ -96,6 +106,14 @@ wails build
 ```
 
 Produces a packaged app at `build/bin/` (`Ingress.app` on macOS).
+
+### Releasing (macOS)
+
+```bash
+./scripts/release-macos.sh
+```
+
+builds both architectures and writes to `dist/`: the DMGs, the app archives in-app updates download (`Ingress-<v>-darwin-<arch>.zip`) and `ingress-update.json` with its signature. The signing key lives in the maintainer's login keychain; see `tools/updatesign`. The script refuses to finish if the signature doesn't verify against the public key compiled into the build. Upload everything in `dist/` to the GitHub release; CI adds the Linux and Windows assets.
 
 The VPN client builds come from [ingress-deps](https://github.com/azizbekatajanov/ingress-deps). To update them, publish a new release there and paste its `ingress-manifest.go.txt` into `components_manifest.go`.
 

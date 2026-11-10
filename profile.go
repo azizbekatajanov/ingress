@@ -166,6 +166,8 @@ type profileConfig struct {
 	// Language is the UI language picked in About ("en", "ru", "uz");
 	// empty means follow the system.
 	Language string `json:"language,omitempty"`
+	// UpdateCheck turns the daily update check off when false; nil = on.
+	UpdateCheck *bool `json:"updateCheck,omitempty"`
 	// ComponentOverrides maps a component name (see components.go) to a
 	// user-chosen binary path that takes precedence over Ingress' own build.
 	ComponentOverrides map[string]string `json:"componentOverrides,omitempty"`
@@ -380,6 +382,19 @@ func (s *ProfileStore) SetLanguage(lang string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cfg.Language = lang
+	return s.save()
+}
+
+func (s *ProfileStore) UpdateCheck() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cfg.UpdateCheck == nil || *s.cfg.UpdateCheck
+}
+
+func (s *ProfileStore) SetUpdateCheck(on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg.UpdateCheck = &on
 	return s.save()
 }
 

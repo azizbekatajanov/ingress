@@ -62,3 +62,17 @@ func rootManifest(extra []string) (componentManifest, error) {
 	}
 	return nil, fmt.Errorf("unexpected arguments: %v", extra)
 }
+
+// Dev builds can point the updater at a local test release, signed with a
+// throwaway key: INGRESS_UPDATE_URL (base URL ending in /) and
+// INGRESS_UPDATE_PUBKEY (base64 ed25519 public key). Release builds never
+// compile this in, so they only ever trust GitHub and the real key.
+func init() {
+	if u := os.Getenv("INGRESS_UPDATE_URL"); u != "" {
+		updateBaseURL = u
+	}
+	if k := os.Getenv("INGRESS_UPDATE_PUBKEY"); k != "" {
+		updatePublicKey = k
+	}
+	devAutoInstallUpdate = os.Getenv("INGRESS_UPDATE_AUTOINSTALL") == "1"
+}

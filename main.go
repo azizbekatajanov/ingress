@@ -36,6 +36,9 @@ func main() {
 	}
 	// Hidden root modes `--install-component` / `--remove-component`, run
 	// elevated by ComponentManager (see components_root.go).
+	if len(os.Args) > 1 && isRootUpdateCommand(os.Args[1]) {
+		os.Exit(runRootUpdateCommand(takeLangArg(os.Args[2:])))
+	}
 	if len(os.Args) > 1 && isRootComponentCommand(os.Args[1]) {
 		os.Exit(runRootComponentCommand(os.Args[1], takeLangArg(os.Args[2:])))
 	}

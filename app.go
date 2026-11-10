@@ -17,6 +17,7 @@ type App struct {
 	manager       *Manager
 	components    *ComponentManager
 	tray          *Tray
+	updater       *Updater
 	quitConfirmed bool
 }
 
@@ -52,6 +53,9 @@ func (a *App) startup(ctx context.Context) {
 	if a.tray != nil {
 		a.tray.OnProfilesChanged()
 	}
+
+	a.updater = NewUpdater(a)
+	go a.updater.run(ctx)
 }
 
 // --- Profiles ---

@@ -880,3 +880,28 @@ func (m *Manager) terminate(profileID string) error {
 	}
 	return proc.Terminate()
 }
+
+// DisconnectAll stops every connection (and pending attempt) and waits up to
+// timeout for them to finish — used before an in-app update restarts Ingress.
+func (m *Manager) DisconnectAll(timeout time.Duration) {
+	active := func() []string {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		var ids []string
+		for id, c := range m.conns {
+			c.mu.Lock()
+			if c.status != StatusDisconnected {
+				ids = append(ids, id)
+			}
+			c.mu.Unlock()
+		}
+		return ids
+	}
+	for _, id := range active() {
+		_ = m.Disconnect(id)
+	}
+	deadline := time.Now().Add(timeout)
+	for len(active()) > 0 && time.Now().Before(deadline) {
+		time.Sleep(200 * time.Millisecond)
+	}
+}
