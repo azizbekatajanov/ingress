@@ -58,13 +58,13 @@ func (p *unixElevatedProc) Terminate() error {
 // signal.
 //
 // toolPath must be absolute — it comes from ComponentManager.ResolvePath.
-func elevatedCommand(toolPath string, args ...string) (elevatedProc, func(), error) {
+func elevatedCommand(toolPath string, wrapperOpts []string, args ...string) (elevatedProc, func(), error) {
 	selfPath, err := os.Executable()
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolving own executable path: %w", err)
 	}
 
-	fullArgs := append([]string{selfPath, "--pty-exec", toolPath}, args...)
+	fullArgs := append(append(append([]string{selfPath, "--pty-exec"}, wrapperOpts...), toolPath), args...)
 	cmd := exec.Command("pkexec", fullArgs...)
 
 	stdin, err := cmd.StdinPipe()

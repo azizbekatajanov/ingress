@@ -216,9 +216,39 @@
             <label data-i18n="ui.f.oc_servercert">Сертификат сервера (servercert)</label>
             <input type="text" class="mono" data-bind="cisco.serverCert" data-i18n-placeholder="ui.ph.servercert" placeholder="pin-sha256:… — заполнится сам при первом подключении">
           </div>
+          <div class="field" data-for="sstp">
+            <label data-i18n="ui.f.sstp_ca">CA certificate (ca-cert)</label>
+            <div class="browse-wrap">
+              <input type="text" data-bind="sstp.caFile" data-i18n-placeholder="ui.f.sstp_ca_ph" placeholder="optional">
+              <div class="btn neutral" data-browse="sstp.caFile" data-i18n="ui.browse">Browse…</div>
+            </div>
+          </div>
+          <div class="toggle-row bordered-top" data-for="sstp">
+            <div>
+              <div class="toggle-title" data-i18n="ui.f.insecure">Don't verify the server certificate</div>
+              <div class="toggle-desc danger" data-i18n="ui.f.sstp_insecure_desc">cert-warn — test servers only</div>
+            </div>
+            <div class="switch danger" data-switch="sstp.insecureCert"><div class="knob"></div></div>
+          </div>
         </div>
 
         <div class="form" id="viewAdvanced" hidden>
+          <div class="field" data-for="sstp">
+            <label data-i18n="ui.f.sstp_routes">Route through the tunnel</label>
+            <select data-bind="sstp.routeMode">
+              <option value="subnets" data-i18n="ui.f.sstp_routes.subnets">Only these networks</option>
+              <option value="all" data-i18n="ui.f.sstp_routes.all">All traffic</option>
+            </select>
+          </div>
+          <div class="field" data-for="sstp" data-when="sstp.routeMode=subnets">
+            <label data-i18n="ui.f.sstp_subnets">Networks (CIDR), one per line</label>
+            <textarea class="mono" rows="4" data-bind="sstp.subnets" data-lines placeholder="172.16.10.0/24"></textarea>
+          </div>
+          <div class="field bordered-top" data-for="sstp">
+            <label data-i18n="ui.f.sstp_pppd">Extra pppd options</label>
+            <input type="text" class="mono" data-bind="sstp.pppdOptions" data-i18n-placeholder="ui.f.sstp_pppd_ph" placeholder="optional">
+            <div class="toggle-desc" data-i18n="ui.f.sstp_pppd_desc">Always passed: noauth refuse-eap noccp nodeflate nobsdcomp.</div>
+          </div>
           <div class="toggle-row" data-for="fortinet">
             <div>
               <div class="toggle-title" data-i18n="ui.f.set_dns">Настраивать DNS через туннель</div>
@@ -323,7 +353,7 @@
         <img class="about-icon" src="./src/assets/app-icon.png" alt="Ingress">
         <div class="otp-title">Ingress</div>
         <div class="otp-sub" id="aboutVersion"></div>
-        <div class="about-desc" data-i18n="ui.about_desc">Several VPN tunnels at once — Fortinet SSL-VPN, GlobalProtect (including SAML login) and Cisco Secure Client, which the official clients can't do. Ingress installs the openfortivpn and OpenConnect VPN clients itself.</div>
+        <div class="about-desc" data-i18n="ui.about_desc">Several VPN tunnels at once — Fortinet SSL-VPN, GlobalProtect (including SAML login), Cisco Secure Client and Microsoft SSTP, which the official clients can't do. Ingress installs its VPN clients (openfortivpn, OpenConnect, sstpc) itself.</div>
         <div class="about-lang">
           <label for="langSelect" data-i18n="ui.language">Language</label>
           <select id="langSelect"></select>
@@ -355,6 +385,10 @@
           <div class="type-option" data-type="cisco">
             <div class="type-name">Cisco Secure Client</div>
             <div class="type-desc" data-i18n="ui.type.cisco">AnyConnect: Cisco ASA, FTD, ocserv · через OpenConnect</div>
+          </div>
+          <div class="type-option" data-type="sstp">
+            <div class="type-name">SSTP</div>
+            <div class="type-desc" data-i18n="ui.type.sstp">Microsoft SSTP · via sstpc</div>
           </div>
           <div class="type-option" data-type="globalprotect">
             <div class="type-name">GlobalProtect</div>

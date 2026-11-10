@@ -1,12 +1,12 @@
 # Ingress
 
-A native desktop VPN client for **Fortinet SSL-VPN** (via [openfortivpn](https://github.com/adrienverge/openfortivpn)), **Palo Alto GlobalProtect** and **Cisco Secure Client / AnyConnect** (both via [OpenConnect](https://www.infradead.org/openconnect/)), including GlobalProtect **SAML** login. It can hold **multiple VPN profiles connected at the same time**, each with its own tunnel, log and status. The official FortiClient, GlobalProtect and Cisco apps can't do that.
+A native desktop VPN client for **Fortinet SSL-VPN** (via [openfortivpn](https://github.com/adrienverge/openfortivpn)), **Palo Alto GlobalProtect** and **Cisco Secure Client / AnyConnect** (both via [OpenConnect](https://www.infradead.org/openconnect/)), **Microsoft SSTP** (via [sstp-client](https://gitlab.com/sstp-project/sstp-client)), including GlobalProtect **SAML** login. It can hold **multiple VPN profiles connected at the same time**, each with its own tunnel, log and status. The official FortiClient, GlobalProtect and Cisco apps can't do that.
 
 Built with [Wails](https://wails.io) (Go backend, vanilla JS/HTML/CSS frontend).
 
 ## Features
 
-- **Fortinet, GlobalProtect and Cisco side by side.** Each profile has a type, chosen when it's created. Any mix of profiles can be connected in parallel, each as an independent client process.
+- **Fortinet, GlobalProtect, Cisco and SSTP side by side.** Each profile has a type, chosen when it's created. Any mix of profiles can be connected in parallel, each as an independent client process.
 - **No Homebrew, no packages to install.** On the first connect of a profile type, Ingress downloads its own pinned build of the VPN client from [ingress-deps](https://github.com/azizbekatajanov/ingress-deps). It verifies the sha256 against a manifest compiled into the app. It installs the client into a root-owned directory (`/Library/Application Support/Ingress` on macOS, `/opt/ingress` on Linux). The directory chain is re-checked before every connect.
   - The openconnect build carries [openconnect!656](https://gitlab.com/openconnect/openconnect/-/merge_requests/656), which GlobalProtect SAML needs on many gateways.
   - openfortivpn is pinned to 1.20.5, because 1.21+ can't bring the tunnel up on macOS Sonoma+ ([#1165](https://github.com/adrienverge/openfortivpn/issues/1165)).
@@ -20,6 +20,11 @@ Built with [Wails](https://wails.io) (Go backend, vanilla JS/HTML/CSS frontend).
   - Password plus a second factor: one-time codes, or answers such as Duo's `push`. The server's own prompt text is shown.
   - Server-certificate pinning (auto-filled on first connect), client certificates.
   - Not supported yet: SSO (SAML) and hostscan (CSD). Ingress says so instead of failing silently.
+- **Microsoft SSTP** (Windows RRAS, MikroTik and other SSTP servers), via sstpc and the system pppd.
+  - Username and password; the password is passed on stdin, never on a command line.
+  - Routes in the profile: all traffic, or only listed networks (e.g. `172.16.10.0/24`). Ingress adds them on the tunnel's `pppN` itself — no `/etc/ppp/ip-up` scripts or `/etc/ppp/options` needed.
+  - CA certificate (or "don't verify" for test servers), extra pppd options.
+  - Linux needs the `ppp` package.
 - **Fortinet**
   - 2FA/OTP modal with a countdown.
   - realm, CA cert, client cert/key, trusted-cert (auto-filled when the gateway's cert is unknown), insecure-ssl.

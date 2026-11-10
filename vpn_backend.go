@@ -70,6 +70,9 @@ type backendLaunch struct {
 	PromptReplies map[string]string
 	// Target is what the log shows as "Подключение к <Target>...".
 	Target string
+	// WrapperOpts go to Ingress' own root wrapper (`--pty-exec`), not to
+	// the tool: e.g. --routes=… for SSTP (see routewatch.go).
+	WrapperOpts []string
 	// Cleanup removes temp files; called once the process has exited.
 	Cleanup func()
 }
@@ -133,6 +136,8 @@ func backendFor(profileType string) (vpnBackend, error) {
 		return fortinetBackend{}, nil
 	case ProfileTypeGlobalProtect:
 		return globalProtectBackend{}, nil
+	case ProfileTypeSSTP:
+		return sstpBackend{}, nil
 	case ProfileTypeCisco:
 		// A fresh value per connection: it tracks the server's last form
 		// message/error between lines.

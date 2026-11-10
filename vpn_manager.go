@@ -341,7 +341,7 @@ func (m *Manager) launch(conn *liveConnection, profile Profile, toolPath string,
 		return errSAMLCancelled
 	}
 
-	proc, elevateCleanup, err := elevatedCommand(toolPath, launch.Args...)
+	proc, elevateCleanup, err := elevatedCommand(toolPath, append(launch.WrapperOpts, langArg()), launch.Args...)
 	if err != nil {
 		cleanupLaunch()
 		return err

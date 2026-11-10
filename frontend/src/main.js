@@ -38,7 +38,7 @@ function applyI18n() {
 }
 function setI18n(bundle) { Object.assign(i18n, bundle); applyI18n(); }
 
-const TYPE_LABELS = { fortinet: 'Fortinet', globalprotect: 'GlobalProtect', cisco: 'Cisco' };
+const TYPE_LABELS = { fortinet: 'Fortinet', globalprotect: 'GlobalProtect', cisco: 'Cisco', sstp: 'SSTP' };
 const PROFILE_COLORS = ['#ff6961', '#5ac8fa', '#ffd60a', '#bf5af2', '#30d158', '#ff9f0a'];
 
 const state = {
@@ -297,7 +297,7 @@ function render() {
   if (sp && !isConnected) fillForm(sp);
   if (isConnected && state.activeTab === 'status') fillStatus(sp, snap);
   if ((isConnected && state.activeTab === 'log') || showPastLog) {
-    $('#logTitle').textContent = sp.type === 'fortinet' ? t('js.log.fortinet') : t('js.log.openconnect');
+    $('#logTitle').textContent = ({ fortinet: t('js.log.fortinet'), sstp: t('js.log.sstp') })[sp.type] || t('js.log.openconnect');
     fillLog(snap);
   }
 
@@ -431,7 +431,7 @@ async function copyLog(snap) {
 const SOURCE_LABELS = { managed: 'js.src.managed', override: 'js.src.override', system: 'js.src.system' };
 
 function componentByName(name) { return state.components.find(c => c.name === name); }
-function componentForProfile(p) { return (p.type === 'globalprotect' || p.type === 'cisco') ? 'openconnect' : 'openfortivpn'; }
+function componentForProfile(p) { return { globalprotect: 'openconnect', cisco: 'openconnect', sstp: 'sstpc' }[p.type] || 'openfortivpn'; }
 
 // Wails rejects bound-method promises with an Error whose message is the Go
 // error text; String(e) would prefix it with "Error: ".
@@ -641,12 +641,15 @@ function fillForm(p) {
   document.querySelectorAll('[data-for]').forEach(n => {
     let show = n.dataset.for === p.type;
     if (show && n.dataset.connectTo) show = getSetting(p, 'globalprotect.connectTo') === n.dataset.connectTo;
+    // data-when="path=value": shown only while that setting has that value.
+    if (show && n.dataset.when) { const [path, val] = n.dataset.when.split('='); show = getSetting(p, path) === val; }
     n.hidden = !show;
   });
   document.querySelectorAll('[data-bind]').forEach(n => {
     if (document.activeElement === n) return; // don't fight the cursor while typing
     const v = getSetting(p, n.dataset.bind);
-    n.value = v == null ? '' : v;
+    // data-lines: an array setting edited one item per line.
+    n.value = v == null ? '' : ('lines' in n.dataset && Array.isArray(v) ? v.join('\n') : v);
   });
   document.querySelectorAll('[data-switch]').forEach(n => n.classList.toggle('on', !!getSetting(p, n.dataset.switch)));
 }
@@ -733,7 +736,8 @@ $('#f-password').addEventListener('input', e => {
 document.querySelectorAll('[data-bind]').forEach(n => {
   n.addEventListener(n.tagName === 'SELECT' ? 'change' : 'input', e => {
     const sp = selected(); if (!sp) return;
-    setSetting(sp, n.dataset.bind, e.target.value);
+    const value = 'lines' in n.dataset ? e.target.value.split('\n').map(s => s.trim()).filter(Boolean) : e.target.value;
+    setSetting(sp, n.dataset.bind, value);
     scheduleSave(sp);
     if (n.tagName === 'SELECT') render(); // auth/connectTo change which fields show
   });

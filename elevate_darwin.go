@@ -166,8 +166,9 @@ func (p *authProc) Terminate() error {
 //
 // toolPath must be absolute — it comes from ComponentManager.ResolvePath,
 // never from a PATH lookup.
-func elevatedCommand(toolPath string, args ...string) (elevatedProc, func(), error) {
-	pid, file, err := executeSelfElevated(append([]string{"--pty-exec", toolPath}, args...))
+func elevatedCommand(toolPath string, wrapperOpts []string, args ...string) (elevatedProc, func(), error) {
+	argv := append(append([]string{"--pty-exec"}, wrapperOpts...), toolPath)
+	pid, file, err := executeSelfElevated(append(argv, args...))
 	if err != nil {
 		return nil, nil, err
 	}

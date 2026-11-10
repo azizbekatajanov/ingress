@@ -40,13 +40,15 @@ const terminateSentinel = 0x04
 const terminateGrace = 6 * time.Second
 
 func runPtyExec(args []string) {
+	args, routes := takeWrapperOpts(args)
 	if len(args) < 1 {
 		os.Exit(64) // EX_USAGE
 	}
 
 	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stdout
+	out := newRouteWatcher(os.Stdout, routes)
+	cmd.Stdout = out
+	cmd.Stderr = out
 	// New process group so killGroup below can take down openfortivpn's own
 	// children (pppd) too, not just openfortivpn itself.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

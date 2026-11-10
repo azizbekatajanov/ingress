@@ -16,10 +16,11 @@ const (
 	ProfileTypeFortinet      = "fortinet"
 	ProfileTypeGlobalProtect = "globalprotect"
 	ProfileTypeCisco         = "cisco"
+	ProfileTypeSSTP          = "sstp"
 )
 
 func validProfileType(t string) bool {
-	return t == ProfileTypeFortinet || t == ProfileTypeGlobalProtect || t == ProfileTypeCisco
+	return t == ProfileTypeFortinet || t == ProfileTypeGlobalProtect || t == ProfileTypeCisco || t == ProfileTypeSSTP
 }
 
 // Profile holds one VPN profile's non-secret configuration: the fields every
@@ -41,6 +42,27 @@ type Profile struct {
 	Fortinet      *FortinetSettings      `json:"fortinet,omitempty"`
 	GlobalProtect *GlobalProtectSettings `json:"globalprotect,omitempty"`
 	Cisco         *CiscoSettings         `json:"cisco,omitempty"`
+	SSTP          *SSTPSettings          `json:"sstp,omitempty"`
+}
+
+// SSTP route modes.
+const (
+	SSTPRoutesAll     = "all"     // all traffic through the tunnel
+	SSTPRoutesSubnets = "subnets" // only Subnets
+)
+
+// SSTPSettings is what sstpc (Microsoft SSTP) needs. pppd options come from
+// Ingress, not /etc/ppp/options.
+type SSTPSettings struct {
+	CaFile       string `json:"caFile"`
+	InsecureCert bool   `json:"insecureCert"`
+	// RouteMode: SSTPRoutesAll or SSTPRoutesSubnets; Subnets are CIDRs
+	// ("172.16.10.0/24") routed through the tunnel in subnets mode.
+	RouteMode string   `json:"routeMode"`
+	Subnets   []string `json:"subnets"`
+	// PppdOptions are extra pppd options, space-separated (see
+	// sstpPppdOptions for what's refused).
+	PppdOptions string `json:"pppdOptions"`
 }
 
 // CiscoSettings is what openconnect --protocol=anyconnect needs (Cisco
@@ -128,6 +150,7 @@ func normalizeProfile(p *Profile) {
 		}
 		p.GlobalProtect = nil
 		p.Cisco = nil
+		p.SSTP = nil
 	case ProfileTypeGlobalProtect:
 		if p.GlobalProtect == nil {
 			p.GlobalProtect = defaultGlobalProtectSettings()
@@ -141,12 +164,24 @@ func normalizeProfile(p *Profile) {
 		}
 		p.Fortinet = nil
 		p.Cisco = nil
+		p.SSTP = nil
 	case ProfileTypeCisco:
 		if p.Cisco == nil {
 			p.Cisco = &CiscoSettings{}
 		}
 		p.Fortinet = nil
 		p.GlobalProtect = nil
+		p.SSTP = nil
+	case ProfileTypeSSTP:
+		if p.SSTP == nil {
+			p.SSTP = &SSTPSettings{RouteMode: SSTPRoutesSubnets}
+		}
+		if p.SSTP.RouteMode != SSTPRoutesAll {
+			p.SSTP.RouteMode = SSTPRoutesSubnets
+		}
+		p.Fortinet = nil
+		p.GlobalProtect = nil
+		p.Cisco = nil
 	}
 }
 
@@ -250,7 +285,7 @@ func migrateProfiles(data []byte, profiles []Profile) (bool, error) {
 		}
 		before := *p
 		normalizeProfile(p)
-		if before.Type != p.Type || (before.Fortinet == nil) != (p.Fortinet == nil) || (before.GlobalProtect == nil) != (p.GlobalProtect == nil) || (before.Cisco == nil) != (p.Cisco == nil) {
+		if before.Type != p.Type || (before.Fortinet == nil) != (p.Fortinet == nil) || (before.GlobalProtect == nil) != (p.GlobalProtect == nil) || (before.Cisco == nil) != (p.Cisco == nil) || (before.SSTP == nil) != (p.SSTP == nil) {
 			changed = true
 		}
 	}

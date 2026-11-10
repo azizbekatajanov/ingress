@@ -46,6 +46,7 @@ const terminateGrace = 6 * time.Second
 // our situation. pty.Start() allocates a fresh pty unconditionally, with no
 // dependency on our own stdio, closing that gap.
 func runPtyExec(args []string) {
+	args, routes := takeWrapperOpts(args)
 	if len(args) < 1 {
 		os.Exit(64) // EX_USAGE
 	}
@@ -153,7 +154,7 @@ func runPtyExec(args []string) {
 		}
 	}()
 
-	io.Copy(os.Stdout, f) // blocks until the child exits and the pty closes
+	io.Copy(newRouteWatcher(os.Stdout, routes), f) // blocks until the child exits and the pty closes
 	close(exited)
 	cmd.Wait()
 	f.Close()
