@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"errors"
 )
 
 // vpnBackend adapts one VPN protocol's command-line client to Manager.
@@ -138,5 +138,5 @@ func backendFor(profileType string) (vpnBackend, error) {
 		// message/error between lines.
 		return &ciscoBackend{}, nil
 	}
-	return nil, fmt.Errorf("неизвестный тип профиля %q", profileType)
+	return nil, errors.New(T("err.unknown_type", profileType))
 }

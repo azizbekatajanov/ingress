@@ -3,7 +3,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"syscall"
 )
@@ -19,14 +19,14 @@ func verifyRootOwned(paths []string) error {
 			return err
 		}
 		if fi.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%s — символическая ссылка", p)
+			return errors.New(T("secure.symlink", p))
 		}
 		st, ok := fi.Sys().(*syscall.Stat_t)
 		if !ok || st.Uid != 0 {
-			return fmt.Errorf("%s принадлежит не root", p)
+			return errors.New(T("secure.not_root", p))
 		}
 		if fi.Mode().Perm()&0o022 != 0 {
-			return fmt.Errorf("%s доступен на запись не только root", p)
+			return errors.New(T("secure.writable", p))
 		}
 	}
 	return nil

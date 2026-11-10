@@ -31,6 +31,8 @@ import (
 
 type samlRequest struct {
 	Title string `json:"title"`
+	// Lang is the UI language, for the window's own error messages.
+	Lang string `json:"lang,omitempty"`
 	// Exactly one of URL (REDIRECT method) or HTML (POST method: an
 	// auto-submitting form) is set; BaseURL is the origin for HTML.
 	URL     string `json:"url,omitempty"`
@@ -63,19 +65,19 @@ func (r samlResult) secretField() (field, value string) {
 func samlRequestFromPrelogin(info gpPreloginInfo, base, title string) (samlRequest, error) {
 	decoded, err := base64.StdEncoding.DecodeString(info.SAMLRequest)
 	if err != nil {
-		return samlRequest{}, fmt.Errorf("saml-request не в base64: %w", err)
+		return samlRequest{}, fmt.Errorf("%s: %w", T("saml.err.not_base64"), err)
 	}
 	switch info.SAMLMethod {
 	case "REDIRECT":
 		u := strings.TrimSpace(string(decoded))
 		if !strings.HasPrefix(u, "https://") {
-			return samlRequest{}, fmt.Errorf("SAML REDIRECT ведёт не на https: %q", u)
+			return samlRequest{}, errors.New(T("saml.err.not_https", u))
 		}
 		return samlRequest{Title: title, URL: u}, nil
 	case "POST":
 		return samlRequest{Title: title, HTML: string(decoded), BaseURL: base}, nil
 	}
-	return samlRequest{}, fmt.Errorf("неизвестный метод SAML %q", info.SAMLMethod)
+	return samlRequest{}, errors.New(T("saml.err.method", info.SAMLMethod))
 }
 
 // samlCollector accumulates GlobalProtect result fields seen in headers and
@@ -107,14 +109,14 @@ func (c *samlCollector) addHeaders(block string) {
 		for _, f := range samlFieldNames {
 			if name == f {
 				c.fields[f] = strings.TrimSpace(value)
-				c.source = "заголовки ответа"
+				c.source = "headers"
 			}
 		}
 	}
 }
 
 func (c *samlCollector) addBody(html string) {
-	c.addBodyFrom(html, "страница")
+	c.addBodyFrom(html, "page")
 }
 
 func (c *samlCollector) addBodyFrom(html, source string) {
@@ -150,7 +152,7 @@ func (c *samlCollector) addCallback(rawURL string) {
 		if token := q.Get("token"); token != "" {
 			c.fields["prelogin-cookie"] = token
 		}
-		c.source = "globalprotectcallback (CAS)"
+		c.source = "globalprotectcallback-cas"
 		c.mu.Unlock()
 		return
 	}
@@ -171,7 +173,7 @@ func (c *samlCollector) result() (samlResult, bool) {
 	if c.fields["saml-auth-status"] == "-1" {
 		msg := c.fields["saml-message"]
 		if msg == "" {
-			msg = "сервер сообщил об ошибке SAML-входа"
+			msg = T("saml.err.server")
 		}
 		return samlResult{Error: msg}, true
 	}
@@ -195,7 +197,9 @@ func writeSAMLResult(r samlResult) {
 // runSAMLLoginMode is the child process entry point (--saml-login).
 func runSAMLLoginMode() int {
 	var req samlRequest
-	if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
+	err := json.NewDecoder(os.Stdin).Decode(&req)
+	setLanguage(req.Lang)
+	if err != nil {
 		writeSAMLResult(samlResult{Error: "bad request: " + err.Error()})
 		return 1
 	}
@@ -206,7 +210,7 @@ func runSAMLLoginMode() int {
 	return 0
 }
 
-var errSAMLCancelled = errors.New("SAML-вход отменён")
+var errSAMLCancelled = errors.New(T("saml.cancelled"))
 
 // samlLogin runs the SAML window (unprivileged child process) and waits for
 // its result. Cancelling ctx closes the window.
@@ -216,6 +220,7 @@ func samlLogin(ctx context.Context, req samlRequest) (samlResult, error) {
 		return samlResult{}, err
 	}
 	cmd := exec.CommandContext(ctx, self, "--saml-login")
+	req.Lang = language()
 	in, err := json.Marshal(req)
 	if err != nil {
 		return samlResult{}, err
@@ -244,9 +249,9 @@ func samlLogin(ctx context.Context, req samlRequest) (samlResult, error) {
 	}
 	if !got {
 		if waitErr != nil {
-			return samlResult{}, fmt.Errorf("окно SAML-входа завершилось с ошибкой: %v", waitErr)
+			return samlResult{}, errors.New(T("saml.err.window_failed", waitErr))
 		}
-		return samlResult{}, errors.New("окно SAML-входа закрылось без результата")
+		return samlResult{}, errors.New(T("saml.err.no_result"))
 	}
 	if res.Cancelled {
 		return samlResult{}, errSAMLCancelled

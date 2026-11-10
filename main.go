@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"log"
 	"os"
 
 	"github.com/energye/systray"
@@ -36,7 +37,7 @@ func main() {
 	// Hidden root modes `--install-component` / `--remove-component`, run
 	// elevated by ComponentManager (see components_root.go).
 	if len(os.Args) > 1 && isRootComponentCommand(os.Args[1]) {
-		os.Exit(runRootComponentCommand(os.Args[1], os.Args[2:]))
+		os.Exit(runRootComponentCommand(os.Args[1], takeLangArg(os.Args[2:])))
 	}
 
 	// See path_darwin.go: a GUI launch (Finder/Dock/`open`) doesn't inherit
@@ -46,6 +47,12 @@ func main() {
 	augmentPATH()
 
 	app := NewApp()
+	store, err := NewProfileStore()
+	if err != nil {
+		log.Fatalf("ingress: failed to open profile store: %v", err)
+	}
+	app.store = store
+	setLanguage(resolveLanguage(store.Language()))
 
 	// RunWithExternalLoop (energye/systray) hands us start/end functions instead
 	// of blocking in systray.Run — Wails' own window loop also wants the main
@@ -66,24 +73,7 @@ func main() {
 	// AppMenu role's native "Hide Others"/"Show All" items (they invoke
 	// NSApplication selectors no Wails API exposes) are dropped rather than
 	// reimplemented — Hide/Quit cover the cases that matter here.
-	ingressMenu := menu.NewMenu()
-	ingressMenu.AddText("About Ingress", nil, func(_ *menu.CallbackData) {
-		wailsRuntime.WindowShow(app.ctx)
-		wailsRuntime.WindowUnminimise(app.ctx)
-		wailsRuntime.EventsEmit(app.ctx, "about:show")
-	})
-	ingressMenu.AddSeparator()
-	ingressMenu.AddText("Hide Ingress", keys.CmdOrCtrl("h"), func(_ *menu.CallbackData) {
-		app.HideWindow()
-	})
-	ingressMenu.AddSeparator()
-	ingressMenu.AddText("Quit Ingress", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
-		wailsRuntime.Quit(app.ctx)
-	})
-	appMenu := menu.NewMenuFromItems(
-		menu.SubMenu("Ingress", ingressMenu),
-		menu.EditMenu(),
-	)
+	appMenu := buildAppMenu(app)
 
 	// Frameless, opaque window: the traffic-light dots and sidebar chrome are
 	// drawn by the frontend CSS/JS (see frontend/src/style.css .window), not
@@ -101,7 +91,7 @@ func main() {
 	// and exactly window-sized also happens to be what real resizing needs —
 	// a fixed 1180x760 CSS panel floating in a resizable canvas doesn't grow
 	// with the window.
-	err := wails.Run(&options.App{
+	err = wails.Run(&options.App{
 		Title:            "Ingress",
 		Width:            1180,
 		Height:           760,
@@ -133,4 +123,27 @@ func main() {
 	if err != nil {
 		println("Error:", err.Error())
 	}
+}
+
+// buildAppMenu builds the native app menu in the current language; App
+// rebuilds it when the language changes.
+func buildAppMenu(app *App) *menu.Menu {
+	ingressMenu := menu.NewMenu()
+	ingressMenu.AddText(T("menu.about"), nil, func(_ *menu.CallbackData) {
+		wailsRuntime.WindowShow(app.ctx)
+		wailsRuntime.WindowUnminimise(app.ctx)
+		wailsRuntime.EventsEmit(app.ctx, "about:show")
+	})
+	ingressMenu.AddSeparator()
+	ingressMenu.AddText(T("menu.hide"), keys.CmdOrCtrl("h"), func(_ *menu.CallbackData) {
+		app.HideWindow()
+	})
+	ingressMenu.AddSeparator()
+	ingressMenu.AddText(T("menu.quit"), keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
+		wailsRuntime.Quit(app.ctx)
+	})
+	return menu.NewMenuFromItems(
+		menu.SubMenu("Ingress", ingressMenu),
+		menu.EditMenu(),
+	)
 }

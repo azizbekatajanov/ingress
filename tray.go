@@ -122,23 +122,23 @@ func (t *Tray) rebuildMenu() {
 		}
 	}
 
-	t.header = systray.AddMenuItem("Не подключено", "")
+	t.header = systray.AddMenuItem(T("tray.not_connected"), "")
 	t.header.Disable()
 	systray.AddSeparator()
 
-	openItem := systray.AddMenuItem("Открыть Ingress", "")
+	openItem := systray.AddMenuItem(T("tray.open"), "")
 	openItem.Click(func() {
 		wailsRuntime.WindowShow(t.app.ctx)
 		wailsRuntime.WindowUnminimise(t.app.ctx)
 	})
-	aboutItem := systray.AddMenuItem("О программе", "")
+	aboutItem := systray.AddMenuItem(T("tray.about"), "")
 	aboutItem.Click(func() {
 		wailsRuntime.WindowShow(t.app.ctx)
 		wailsRuntime.WindowUnminimise(t.app.ctx)
 		wailsRuntime.EventsEmit(t.app.ctx, "about:show")
 	})
 	systray.AddSeparator()
-	quitItem := systray.AddMenuItem("Выход", "")
+	quitItem := systray.AddMenuItem(T("tray.quit"), "")
 	quitItem.Click(func() {
 		wailsRuntime.Quit(t.app.ctx)
 	})
@@ -169,18 +169,18 @@ func (t *Tray) refreshItemLocked(profileID string) {
 	title := p.Name
 	switch snap.Status {
 	case StatusConnecting:
-		title += " — подключение…"
+		title += T("tray.suffix.connecting")
 	case StatusOtp:
-		title += " — код…"
+		title += T("tray.suffix.code")
 	case StatusChoose:
-		title += " — выбор шлюза…"
+		title += T("tray.suffix.choose")
 	case StatusDisconnected:
 		// Otherwise a failed attempt looks identical to a profile that was
 		// simply never connected — the tray row was one of the places this
 		// went unnoticed (see Manager.finish's profile:failed emit for the
 		// other one, the in-window error banner).
 		if snap.LastError != "" {
-			title += " — ошибка"
+			title += T("tray.suffix.error")
 		}
 	}
 	item.SetTitle(title)
@@ -203,10 +203,10 @@ func (t *Tray) refreshHeaderLocked() {
 	}
 	if len(connectedNames) > 0 {
 		systray.SetIcon(trayIconConnected)
-		t.header.SetTitle("Подключено: " + strings.Join(connectedNames, ", "))
+		t.header.SetTitle(T("tray.connected", strings.Join(connectedNames, ", ")))
 	} else {
 		systray.SetIcon(trayIconPlain)
-		t.header.SetTitle("Не подключено")
+		t.header.SetTitle(T("tray.not_connected"))
 	}
 }
 
@@ -236,3 +236,6 @@ func (t *Tray) OnConnectionUpdate(snap ConnectionSnapshot) {
 	t.refreshItemLocked(snap.ProfileID)
 	t.refreshHeaderLocked()
 }
+
+// OnLanguageChanged rebuilds the menu so every title is in the new language.
+func (t *Tray) OnLanguageChanged() { t.OnProfilesChanged() }

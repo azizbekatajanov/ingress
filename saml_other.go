@@ -7,5 +7,5 @@ import "errors"
 // runSAMLWindow: no native SAML window on this platform/build (Windows, or
 // a Linux build without cgo — which Wails can't produce anyway).
 func runSAMLWindow(samlRequest) error {
-	return errors.New("SAML-вход на этой платформе не поддерживается")
+	return errors.New(T("saml.err.unsupported"))
 }

@@ -295,7 +295,7 @@ func (m *Manager) Connect(profileID string) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	conn.cancelPreAuth = cancel
-	conn.addLog(fmt.Sprintf("Подключение к %s...", profile.Host))
+	conn.addLog(T("log.connecting", profile.Host))
 	m.mu.Lock()
 	m.conns[profileID] = conn
 	m.mu.Unlock()
@@ -365,7 +365,7 @@ func (m *Manager) launch(conn *liveConnection, profile Profile, toolPath string,
 			proc.Terminate()
 		}
 	}()
-	conn.addLog(fmt.Sprintf("Подключение к %s...", launch.Target))
+	conn.addLog(T("log.connecting", launch.Target))
 
 	m.mu.Lock()
 	m.conns[conn.profileID] = conn
@@ -385,7 +385,7 @@ func (m *Manager) launch(conn *liveConnection, profile Profile, toolPath string,
 	}
 	if launch.Stdin != "" {
 		if _, err := io.WriteString(conn.stdin, launch.Stdin+"\n"); err != nil {
-			conn.addLog(fmt.Sprintf("Не удалось передать данные клиенту: %v", err))
+			conn.addLog(T("log.stdin_failed", err))
 		}
 	}
 
@@ -402,27 +402,27 @@ func (m *Manager) abortPending(conn *liveConnection, err error) {
 	var cert *errUntrustedServerCert
 	switch {
 	case errors.Is(err, errSAMLCancelled) || conn.isCancelling():
-		conn.addLog("Подключение отменено")
+		conn.addLog(T("log.cancelled"))
 	case errors.As(err, &cert):
-		msg := "сертификат сервера не прошёл проверку"
+		msg := T("cert.server_unverified_short")
 		if profile, ok := m.store.Get(conn.profileID); ok {
 			if saved := conn.backend.SaveServerCert(&profile, cert.Pin); saved != "" {
 				if m.store.Update(profile) == nil {
 					conn.addLog(saved)
 					m.profileUpdated(conn.profileID)
-					msg += " — он сохранён в профиле, нажмите «Подключить» ещё раз, если доверяете этому серверу"
+					msg = T("cert.server_unverified_saved")
 				}
 			}
 		}
 		conn.mu.Lock()
 		conn.lastError, conn.failed = msg, true
 		conn.mu.Unlock()
-		conn.addLog("Ошибка: " + err.Error())
+		conn.addLog(T("log.error", err.Error()))
 	default:
 		conn.mu.Lock()
 		conn.lastError, conn.failed = err.Error(), true
 		conn.mu.Unlock()
-		conn.addLog("Ошибка: " + err.Error())
+		conn.addLog(T("log.error", err.Error()))
 	}
 	m.finish(conn)
 }
@@ -531,9 +531,9 @@ func (m *Manager) handleLine(conn *liveConnection, line string, prompt bool) {
 	conn.mu.Unlock()
 
 	if prompt && autoReply && !cancelling {
-		conn.addLog(fmt.Sprintf("Клиент снова запросил «%s» — передаю те же данные входа", strings.TrimSpace(line)))
+		conn.addLog(T("log.reprompt", strings.TrimSpace(line)))
 		if _, err := io.WriteString(conn.stdin, reply+"\n"); err != nil {
-			conn.addLog(fmt.Sprintf("Не удалось ответить клиенту: %v", err))
+			conn.addLog(T("log.reply_failed", err))
 		}
 		m.emit(conn)
 		return
@@ -551,7 +551,7 @@ func (m *Manager) handleLine(conn *liveConnection, line string, prompt bool) {
 			if ev.Fallback && conn.prevLine != "" {
 				// The client's own wording for the cause is usually the line
 				// right before its generic summary.
-				ev.Value += " (последнее сообщение: «" + conn.prevLine + "»)"
+				ev.Value = T("err.with_last_line", ev.Value, conn.prevLine)
 			}
 			if ev.Sticky || !conn.errorSticky {
 				conn.lastError = ev.Value
@@ -568,7 +568,7 @@ func (m *Manager) handleLine(conn *liveConnection, line string, prompt bool) {
 		case evReply:
 			if !cancelling {
 				if _, err := io.WriteString(conn.stdin, ev.Value+"\n"); err != nil {
-					conn.addLog(fmt.Sprintf("Не удалось ответить клиенту: %v", err))
+					conn.addLog(T("log.reply_failed", err))
 				}
 			}
 
@@ -593,7 +593,7 @@ func (m *Manager) handleLine(conn *liveConnection, line string, prompt bool) {
 				conn.otpDeadline = time.Now().Add(otpWindow)
 				conn.promptLabel, conn.promptMessage = "", ""
 				conn.mu.Unlock()
-				conn.addLog("Требуется одноразовый код (2FA)")
+				conn.addLog(T("log.otp_needed"))
 			case PromptText:
 				conn.mu.Lock()
 				conn.status = StatusOtp
@@ -601,14 +601,14 @@ func (m *Manager) handleLine(conn *liveConnection, line string, prompt bool) {
 				conn.otpDeadline = time.Now().Add(2 * otpWindow)
 				conn.promptLabel, conn.promptMessage = ev.Label, ev.Value
 				conn.mu.Unlock()
-				conn.addLog(fmt.Sprintf("Сервер запросил второй фактор (поле «%s»)", ev.Label))
+				conn.addLog(T("log.second_factor", ev.Label))
 			case PromptChoice:
 				conn.mu.Lock()
 				conn.status = StatusChoose
 				conn.promptLabel = ev.Label
 				conn.promptOptions = ev.Options
 				conn.mu.Unlock()
-				conn.addLog(fmt.Sprintf("Требуется выбор: %s", ev.Label))
+				conn.addLog(T("log.choice_needed", ev.Label))
 			}
 			m.emit(conn)
 			// A connect started from the tray has no window on screen, and
@@ -626,7 +626,7 @@ func (m *Manager) handleLine(conn *liveConnection, line string, prompt bool) {
 			}
 			promoted = promoted || (!cancelling && conn.status != StatusConnected)
 			conn.mu.Unlock()
-			conn.addLog(fmt.Sprintf("Назначен IP-адрес: %s", ev.Value))
+			conn.addLog(T("log.ip_assigned", ev.Value))
 
 		case evInterfaceUp:
 			conn.mu.Lock()
@@ -651,7 +651,7 @@ func (m *Manager) handleLine(conn *liveConnection, line string, prompt bool) {
 		conn.lastError = ""
 		conn.errorSticky = false
 		conn.mu.Unlock()
-		conn.addLog("Туннель установлен")
+		conn.addLog(T("log.tunnel_up"))
 	}
 	m.emit(conn)
 }
@@ -664,7 +664,7 @@ func (m *Manager) fail(conn *liveConnection, reason string) {
 	conn.errorSticky = true
 	conn.failed = true
 	conn.mu.Unlock()
-	conn.addLog("Ошибка: " + reason)
+	conn.addLog(T("log.error", reason))
 	m.emit(conn)
 	m.terminate(conn.profileID)
 }
@@ -698,7 +698,7 @@ func (m *Manager) tick(conn *liveConnection) {
 			conn.mu.Unlock()
 
 			if expired {
-				conn.addLog("Код истёк, отключение")
+				conn.addLog(T("log.otp_expired"))
 				m.CancelConnect(conn.profileID)
 				return
 			}
@@ -736,7 +736,7 @@ func (m *Manager) finish(conn *liveConnection) {
 	cancelling := conn.cancelling && !conn.failed
 	conn.mu.Unlock()
 	if !alreadyDisconnected {
-		conn.addLog("Отключено")
+		conn.addLog(T("log.disconnected"))
 	}
 	if conn.cleanup != nil {
 		conn.cleanup()
@@ -788,11 +788,11 @@ func (m *Manager) SubmitPrompt(profileID, value string) error {
 	conn.mu.Unlock()
 
 	if status == StatusOtp && label == "" {
-		conn.addLog("Проверка одноразового кода...")
+		conn.addLog(T("log.checking_code"))
 	} else if status == StatusOtp {
-		conn.addLog("Отправка ответа серверу...")
+		conn.addLog(T("log.sending_answer"))
 	} else {
-		conn.addLog(fmt.Sprintf("Выбрано: %s", value))
+		conn.addLog(T("log.chosen", value))
 		if profile, ok := m.store.Get(profileID); ok && conn.backend.RememberChoice(&profile, label, value) {
 			if err := m.store.Update(profile); err == nil {
 				m.profileUpdated(profileID)
@@ -855,7 +855,7 @@ func (m *Manager) CancelConnect(profileID string) error {
 func (m *Manager) Disconnect(profileID string) error {
 	conn := m.get(profileID)
 	if conn != nil {
-		conn.addLog("Завершение туннеля...")
+		conn.addLog(T("log.stopping"))
 		m.emit(conn)
 	}
 	return m.terminate(profileID)

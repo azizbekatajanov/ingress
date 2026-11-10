@@ -179,6 +179,8 @@ body.theme-dark .banner { color: #ff9f0a; }
 .quit-remember input { margin: 0; }
 
 .about-icon { width: 72px; height: 72px; border-radius: 18px; box-shadow: 0 8px 20px rgba(10,124,255,0.35); }
+.about-lang { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-dim); }
+.about-lang select { font-size: 12px; }
 .about-desc { font-size: 12px; color: var(--text-dim); text-align: center; line-height: 1.5; }
 
 .avatar.has-logo, .avatar-lg.has-logo { background-size: cover; background-position: center; background-repeat: no-repeat; color: transparent; }

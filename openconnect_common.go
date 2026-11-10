@@ -25,7 +25,7 @@ func parseOpenconnectCommon(line, trimmed string) ([]lineEvent, bool) {
 	if m := ocServerCertRe.FindStringSubmatch(line); m != nil {
 		return []lineEvent{
 			{Kind: evServerCert, Value: m[1]},
-			{Kind: evError, Sticky: true, Value: "сертификат сервера не прошёл проверку — он сохранён в профиле, нажмите «Подключить» ещё раз, если доверяете этому серверу"},
+			{Kind: evError, Sticky: true, Value: T("cert.server_unverified_saved")},
 		}, true
 	}
 	if ocCertAskRe.MatchString(trimmed) {
@@ -39,7 +39,7 @@ func parseOpenconnectCommon(line, trimmed string) ([]lineEvent, bool) {
 	if strings.Contains(trimmed, "unsafe legacy renegotiation disabled") {
 		// OpenSSL 3 without SSL_OP_LEGACY_SERVER_CONNECT; Ingress' own
 		// openconnect (ingress-deps patch 0002) connects to such servers.
-		return []lineEvent{{Kind: evError, Sticky: true, Value: "сервер не поддерживает безопасное пересогласование TLS (RFC 5746), а этот openconnect на OpenSSL 3 отказывается к нему подключаться — используйте встроенную сборку OpenConnect в «Компоненты»"}}, true
+		return []lineEvent{{Kind: evError, Sticky: true, Value: T("oc.err.legacy_reneg")}}, true
 	}
 	if ocGenericFailRe.MatchString(trimmed) {
 		return []lineEvent{{Kind: evError, Fallback: true, Value: trimmed}}, true

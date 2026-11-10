@@ -91,9 +91,9 @@ func elevatedRun(args ...string) (string, error) {
 	if errors.As(err, &exitErr) {
 		switch exitErr.ExitCode() {
 		case 126:
-			err = errors.New("запрос прав администратора отменён")
+			err = errors.New(T("elevate.cancelled"))
 		case 127:
-			err = errors.New("нет прав администратора (pkexec)")
+			err = errors.New(T("elevate.no_rights_pkexec"))
 		}
 	}
 	return string(out), err

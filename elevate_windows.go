@@ -24,5 +24,5 @@ func runPtyExec(args []string) {}
 
 // elevatedRun: see elevatedCommand — not implemented on Windows yet.
 func elevatedRun(args ...string) (string, error) {
-	return "", errors.New("windows privilege elevation is not implemented yet")
+	return "", errors.New(T("elevate.windows"))
 }

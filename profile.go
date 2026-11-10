@@ -110,7 +110,7 @@ func defaultGlobalProtectSettings() *GlobalProtectSettings {
 }
 
 func defaultProfile(id, profileType string) Profile {
-	p := Profile{ID: id, Name: "Новый профиль", Type: profileType, Port: "443"}
+	p := Profile{ID: id, Name: T("profile.new_name"), Type: profileType, Port: "443"}
 	normalizeProfile(&p)
 	return p
 }
@@ -163,6 +163,9 @@ type profileConfig struct {
 	SelectedProfileID string    `json:"selectedProfileId"`
 	Theme             string    `json:"theme"`
 	SkipQuitConfirm   bool      `json:"skipQuitConfirm"`
+	// Language is the UI language picked in About ("en", "ru", "uz");
+	// empty means follow the system.
+	Language string `json:"language,omitempty"`
 	// ComponentOverrides maps a component name (see components.go) to a
 	// user-chosen binary path that takes precedence over Ingress' own build.
 	ComponentOverrides map[string]string `json:"componentOverrides,omitempty"`
@@ -364,6 +367,19 @@ func (s *ProfileStore) SetTheme(theme string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cfg.Theme = theme
+	return s.save()
+}
+
+func (s *ProfileStore) Language() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cfg.Language
+}
+
+func (s *ProfileStore) SetLanguage(lang string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg.Language = lang
 	return s.save()
 }
 

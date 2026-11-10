@@ -73,6 +73,6 @@ func samlWindowClosed() {
 
 //export samlLoadFailed
 func samlLoadFailed(msg *C.char) {
-	writeSAMLResult(samlResult{Error: "не удалось открыть страницу входа: " + C.GoString(msg)})
+	writeSAMLResult(samlResult{Error: T("saml.err.load", C.GoString(msg))})
 	os.Exit(0)
 }

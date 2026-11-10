@@ -88,7 +88,7 @@ func saveLogo(profileID, srcPath string) error {
 	defer f.Close()
 	img, _, err := image.Decode(f)
 	if err != nil {
-		return fmt.Errorf("не удалось прочитать изображение (поддерживаются PNG, JPG, GIF): %w", err)
+		return fmt.Errorf("%s: %w", T("logo.err.read"), err)
 	}
 	// Flatten onto transparent RGBA so premultiplied alpha survives the resize.
 	rgba := image.NewRGBA(img.Bounds())
@@ -140,9 +140,9 @@ func (a *App) PickProfileLogo(profileID string) (Profile, error) {
 		return Profile{}, os.ErrNotExist
 	}
 	path, err := wailsRuntime.OpenFileDialog(a.ctx, wailsRuntime.OpenDialogOptions{
-		Title: "Выберите логотип",
+		Title: T("logo.pick_title"),
 		Filters: []wailsRuntime.FileFilter{
-			{DisplayName: "Изображения (PNG, JPG, GIF)", Pattern: "*.png;*.jpg;*.jpeg;*.gif"},
+			{DisplayName: T("logo.filter"), Pattern: "*.png;*.jpg;*.jpeg;*.gif"},
 		},
 	})
 	if err != nil || path == "" {

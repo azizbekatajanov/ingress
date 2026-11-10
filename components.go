@@ -148,7 +148,7 @@ var versionRe = regexp.MustCompile(`\d+\.\d+(\.\d+)?`)
 // (managed builds are pinned).
 var knownBadVersions = map[string][]struct {
 	minVersion string
-	warning    string
+	warning    string // i18n key
 }{
 	"openfortivpn": {{
 		// openfortivpn 1.21+ fails to bring the tunnel up on macOS Sonoma
@@ -156,7 +156,7 @@ var knownBadVersions = map[string][]struct {
 		// (1.0.x matched this by string prefix "1.21", which silently let
 		// 1.22+ through.)
 		minVersion: "1.21",
-		warning:    "openfortivpn 1.21 и новее не поднимает туннель на macOS Sonoma и новее (issue #1165, upstream не исправляет). Установите встроенную сборку 1.20.5.",
+		warning:    "comp.warn.ofv121",
 	}},
 }
 
@@ -166,7 +166,7 @@ func badVersionWarning(name, version string) string {
 	}
 	for _, bad := range knownBadVersions[name] {
 		if compareVersions(version, bad.minVersion) >= 0 {
-			return bad.warning
+			return T(bad.warning)
 		}
 	}
 	return ""
@@ -205,20 +205,20 @@ func binaryVersion(path string) string {
 
 func checkExecutable(path string) error {
 	if !filepath.IsAbs(path) {
-		return errors.New("нужен абсолютный путь")
+		return errors.New(T("comp.err.abs_path"))
 	}
 	fi, err := os.Stat(path)
 	if os.IsNotExist(err) {
-		return errors.New("файл не найден")
+		return errors.New(T("comp.err.not_found"))
 	}
 	if err != nil {
 		return err
 	}
 	if !fi.Mode().IsRegular() {
-		return errors.New("это не файл")
+		return errors.New(T("comp.err.not_file"))
 	}
 	if fi.Mode().Perm()&0o111 == 0 {
-		return errors.New("файл не исполняемый")
+		return errors.New(T("comp.err.not_exec"))
 	}
 	return nil
 }
@@ -318,30 +318,30 @@ func (cm *ComponentManager) ResolvePath(name string) (string, error) {
 
 func (cm *ComponentManager) resolve(name string) (string, string, error) {
 	if _, ok := lookupComponent(name); !ok {
-		return "", "", fmt.Errorf("неизвестный компонент %q", name)
+		return "", "", errors.New(T("comp.err.unknown", name))
 	}
 	if o := cm.store.ComponentOverride(name); o != "" {
 		if err := checkExecutable(o); err != nil {
-			return "", "", fmt.Errorf("указанный в «Компоненты» путь к %s не работает (%s): %v", name, o, err)
+			return "", "", errors.New(T("comp.err.override_broken", name, o, err))
 		}
 		return o, "override", nil
 	}
 	if _, err := os.Lstat(managedBinary(name)); err == nil {
 		if err := verifyRootOwned(managedChain(name)); err != nil {
-			return "", "", fmt.Errorf("встроенный %s не прошёл проверку целостности (%v) — переустановите его в «Компоненты»", name, err)
+			return "", "", errors.New(T("comp.err.integrity", name, err))
 		}
 		return managedBinary(name), "managed", nil
 	}
 	if p, err := exec.LookPath(name); err == nil {
 		return p, "system", nil
 	}
-	return "", "", fmt.Errorf("%s не установлен — установите его кнопкой на экране профиля или в «Компоненты»", name)
+	return "", "", errors.New(T("comp.err.not_installed", name))
 }
 
 // SetOverride stores (or, with an empty path, clears) a custom binary path.
 func (cm *ComponentManager) SetOverride(name, path string) error {
 	if _, ok := lookupComponent(name); !ok {
-		return fmt.Errorf("неизвестный компонент %q", name)
+		return errors.New(T("comp.err.unknown", name))
 	}
 	path = strings.TrimSpace(path)
 	if path != "" {
@@ -358,17 +358,17 @@ const maxArchiveSize = 100 << 20
 // manifest's build of a component.
 func (cm *ComponentManager) Install(ctx context.Context, name string, progress func(ComponentProgress)) error {
 	if _, ok := lookupComponent(name); !ok {
-		return fmt.Errorf("неизвестный компонент %q", name)
+		return errors.New(T("comp.err.unknown", name))
 	}
 	build, ok := activeManifest()[name][platformKey()]
 	if !ok || build.URL == "" || build.SHA256 == "" {
-		return fmt.Errorf("сборка %s для %s пока недоступна", name, platformKey())
+		return errors.New(T("comp.err.no_build", name, platformKey()))
 	}
 
 	cm.mu.Lock()
 	if cm.installing[name] {
 		cm.mu.Unlock()
-		return fmt.Errorf("%s уже устанавливается", name)
+		return errors.New(T("comp.err.installing", name))
 	}
 	cm.installing[name] = true
 	cm.mu.Unlock()
@@ -393,7 +393,7 @@ func (cm *ComponentManager) Install(ctx context.Context, name string, progress f
 	}
 
 	progress(ComponentProgress{Name: name, Phase: "install", Total: -1})
-	args := append([]string{rootInstallFlag, name, archive}, devManifestArgs()...)
+	args := append(append([]string{rootInstallFlag, name, archive}, devManifestArgs()...), langArg())
 	out, runErr := elevatedRun(args...)
 	return parseRootResult(out, runErr)
 }
@@ -401,12 +401,12 @@ func (cm *ComponentManager) Install(ctx context.Context, name string, progress f
 // Remove deletes Ingress' managed install of a component (admin prompt).
 func (cm *ComponentManager) Remove(name string) error {
 	if _, ok := lookupComponent(name); !ok {
-		return fmt.Errorf("неизвестный компонент %q", name)
+		return errors.New(T("comp.err.unknown", name))
 	}
 	if cm.isInstalling(name) {
-		return fmt.Errorf("%s сейчас устанавливается", name)
+		return errors.New(T("comp.err.installing_now", name))
 	}
-	out, err := elevatedRun(rootRemoveFlag, name)
+	out, err := elevatedRun(rootRemoveFlag, name, langArg())
 	return parseRootResult(out, err)
 }
 
@@ -417,7 +417,7 @@ func downloadVerified(ctx context.Context, build ComponentBuild, dest string, pr
 	)
 	u, err := url.Parse(build.URL)
 	if err != nil {
-		return fmt.Errorf("неверный адрес загрузки: %w", err)
+		return fmt.Errorf("%s: %w", T("comp.err.bad_url"), err)
 	}
 	switch u.Scheme {
 	case "https":
@@ -429,11 +429,11 @@ func downloadVerified(ctx context.Context, build ComponentBuild, dest string, pr
 		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			return fmt.Errorf("не удалось скачать: %w", err)
+			return fmt.Errorf("%s: %w", T("comp.err.download"), err)
 		}
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
-			return fmt.Errorf("не удалось скачать: сервер ответил %s", resp.Status)
+			return errors.New(T("comp.err.download_status", resp.Status))
 		}
 		body, total = resp.Body, resp.ContentLength
 	case "file":
@@ -448,7 +448,7 @@ func downloadVerified(ctx context.Context, build ComponentBuild, dest string, pr
 		}
 		body = f
 	default:
-		return fmt.Errorf("неподдерживаемая схема загрузки %q", u.Scheme)
+		return errors.New(T("comp.err.scheme", u.Scheme))
 	}
 	defer body.Close()
 
@@ -472,7 +472,7 @@ func downloadVerified(ctx context.Context, build ComponentBuild, dest string, pr
 			h.Write(buf[:n])
 			done += int64(n)
 			if done > maxArchiveSize {
-				return errors.New("архив больше допустимого размера")
+				return errors.New(T("comp.err.too_big"))
 			}
 			if time.Since(last) > 100*time.Millisecond {
 				progress(done, total)
@@ -483,13 +483,13 @@ func downloadVerified(ctx context.Context, build ComponentBuild, dest string, pr
 			break
 		}
 		if rerr != nil {
-			return fmt.Errorf("загрузка прервалась: %w", rerr)
+			return fmt.Errorf("%s: %w", T("comp.err.interrupted"), rerr)
 		}
 	}
 	progress(done, total)
 
 	if got := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(got, build.SHA256) {
-		return fmt.Errorf("контрольная сумма архива не совпадает (ожидалась %s, получена %s) — файл повреждён или подменён", build.SHA256, got)
+		return fmt.Errorf("%s", T("comp.err.checksum", build.SHA256, got))
 	}
 	return out.Close()
 }
@@ -511,5 +511,5 @@ func parseRootResult(out string, runErr error) error {
 	if len(tail) > 300 {
 		tail = tail[len(tail)-300:]
 	}
-	return fmt.Errorf("установщик завершился без результата: %s", tail)
+	return errors.New(T("comp.err.no_result", tail))
 }

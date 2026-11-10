@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,19 +11,19 @@
   <div class="window">
     <div class="sidebar">
       <div class="traffic-lights">
-        <span class="dot red" id="dotClose" title="Скрыть в трей"></span>
-        <span class="dot yellow" id="dotMinimise" title="Свернуть"></span>
-        <span class="dot green" id="dotMaximise" title="Во весь экран"></span>
+        <span class="dot red" id="dotClose" data-i18n-title="ui.dot.hide" title="Скрыть в трей"></span>
+        <span class="dot yellow" id="dotMinimise" data-i18n-title="ui.dot.minimise" title="Свернуть"></span>
+        <span class="dot green" id="dotMaximise" data-i18n-title="ui.dot.fullscreen" title="Во весь экран"></span>
       </div>
-      <div class="sidebar-heading">Профили</div>
+      <div class="sidebar-heading" data-i18n="ui.profiles">Профили</div>
       <div class="profile-list" id="profileList"></div>
       <div class="sidebar-add" id="addProfile">
-        <span class="add-icon">+</span> Добавить профиль
+        <span class="add-icon">+</span> <span data-i18n="ui.add_profile">Добавить профиль</span>
       </div>
       <div class="sidebar-footer">
         <div class="sidebar-links">
-          <span class="link" id="aboutTrigger" title="О программе">Ingress</span>
-          <span class="link" id="componentsTrigger" title="VPN-клиенты, которые запускает Ingress">Компоненты</span>
+          <span class="link" id="aboutTrigger" data-i18n-title="ui.about" title="О программе">Ingress</span>
+          <span class="link" id="componentsTrigger" data-i18n-title="ui.components_hint" title="VPN-клиенты, которые запускает Ingress" data-i18n="ui.components">Компоненты</span>
         </div>
         <div class="switch" id="themeToggle"><div class="knob"></div></div>
       </div>
@@ -37,16 +37,16 @@
         </div>
         <div class="pill" id="statusPill">Не подключено</div>
         <div class="btn primary" id="connectBtn">Подключить</div>
-        <div class="icon-btn" id="gearBtn" title="Настройки профиля">⚙</div>
+        <div class="icon-btn" id="gearBtn" data-i18n-title="ui.profile_settings" title="Настройки профиля">⚙</div>
       </div>
 
       <div class="tabs" id="tabsRow" hidden>
-        <div class="tab back" id="backToOverview" hidden>‹ Обзор</div>
-        <div class="tab" data-tab="general">Основное</div>
-        <div class="tab" data-tab="certificate">Сертификаты</div>
-        <div class="tab" data-tab="advanced">Дополнительно</div>
-        <div class="tab" data-tab="status">Статус</div>
-        <div class="tab" data-tab="log">Журнал</div>
+        <div class="tab back" id="backToOverview" hidden data-i18n="ui.tab.back">‹ Обзор</div>
+        <div class="tab" data-tab="general" data-i18n="ui.tab.general">Основное</div>
+        <div class="tab" data-tab="certificate" data-i18n="ui.tab.certificate">Сертификаты</div>
+        <div class="tab" data-tab="advanced" data-i18n="ui.tab.advanced">Дополнительно</div>
+        <div class="tab" data-tab="status" data-i18n="ui.tab.status">Статус</div>
+        <div class="tab" data-tab="log" data-i18n="ui.tab.log">Журнал</div>
       </div>
 
       <div class="content" id="content">
@@ -57,29 +57,29 @@
           <div class="avatar-lg" id="overviewAvatar"></div>
           <div class="overview-name" id="overviewName"></div>
           <div class="overview-host" id="overviewHost"></div>
-          <div class="link" id="openSettingsLink">Настройки профиля →</div>
+          <div class="link" id="openSettingsLink" data-i18n="ui.open_settings">Настройки профиля →</div>
         </div>
 
         <div class="connecting-overlay" id="viewConnecting" hidden>
           <div class="connecting-card">
             <div class="spinner"></div>
             <div class="connecting-title" id="connectingTitle">Подключение…</div>
-            <div class="connecting-sub">Установка TLS-туннеля и аутентификация</div>
-            <div class="btn neutral" id="cancelConnectBtn">Отмена</div>
+            <div class="connecting-sub" data-i18n="ui.connecting_sub">Установка TLS-туннеля и аутентификация</div>
+            <div class="btn neutral" id="cancelConnectBtn" data-i18n="ui.cancel">Отмена</div>
           </div>
         </div>
 
         <div class="form" id="viewGeneral" hidden>
           <div class="field">
-            <label>Логотип профиля</label>
+            <label data-i18n="ui.f.logo">Логотип профиля</label>
             <div class="logo-wrap">
               <div class="avatar-lg" id="logoPreview"></div>
-              <div class="btn neutral" id="logoPickBtn">Загрузить…</div>
-              <div class="btn neutral" id="logoRemoveBtn">Убрать</div>
+              <div class="btn neutral" id="logoPickBtn" data-i18n="ui.f.logo_pick">Загрузить…</div>
+              <div class="btn neutral" id="logoRemoveBtn" data-i18n="ui.f.logo_remove">Убрать</div>
             </div>
           </div>
           <div class="field">
-            <label>Название профиля</label>
+            <label data-i18n="ui.f.name">Название профиля</label>
             <input type="text" id="f-name">
           </div>
           <div class="field-row">
@@ -88,199 +88,199 @@
               <input type="text" id="f-host" placeholder="vpn.example.com">
             </div>
             <div class="field small">
-              <label>Порт</label>
+              <label data-i18n="ui.f.port">Порт</label>
               <input type="text" id="f-port" placeholder="8443">
             </div>
           </div>
           <div class="field">
-            <label>Имя пользователя (username)</label>
+            <label data-i18n="ui.f.username">Имя пользователя (username)</label>
             <input type="text" id="f-username">
           </div>
           <div class="field" id="f-password-field">
-            <label>Пароль</label>
+            <label data-i18n="ui.f.password">Пароль</label>
             <div class="password-wrap">
               <input type="password" id="f-password">
-              <span class="link inline" id="togglePassword">Показать</span>
+              <span class="link inline" id="togglePassword" data-i18n="ui.show">Показать</span>
             </div>
           </div>
           <div class="field" data-for="fortinet">
             <label>Realm</label>
-            <input type="text" data-bind="fortinet.realm" placeholder="необязательно">
+            <input type="text" data-bind="fortinet.realm" data-i18n-placeholder="ui.ph.optional" placeholder="необязательно">
           </div>
           <div class="field" data-for="globalprotect">
-            <label>Способ входа</label>
+            <label data-i18n="ui.f.gp_auth">Способ входа</label>
             <select data-bind="globalprotect.auth">
-              <option value="auto">Автоматически — как требует портал</option>
-              <option value="password">Логин и пароль</option>
-              <option value="saml">SAML (единый вход через браузер)</option>
+              <option value="auto" data-i18n="ui.f.gp_auth.auto">Автоматически — как требует портал</option>
+              <option value="password" data-i18n="ui.f.gp_auth.password">Логин и пароль</option>
+              <option value="saml" data-i18n="ui.f.gp_auth.saml">SAML (единый вход через браузер)</option>
             </select>
           </div>
           <div class="field" data-for="globalprotect">
-            <label>Подключаться к</label>
+            <label data-i18n="ui.f.gp_connect">Подключаться к</label>
             <select data-bind="globalprotect.connectTo">
-              <option value="portal">Порталу — шлюз выбирается из списка</option>
-              <option value="gateway">Напрямую к шлюзу</option>
+              <option value="portal" data-i18n="ui.f.gp_connect.portal">Порталу — шлюз выбирается из списка</option>
+              <option value="gateway" data-i18n="ui.f.gp_connect.gateway">Напрямую к шлюзу</option>
             </select>
           </div>
           <div class="field" data-for="cisco">
-            <label>Группа (connection profile)</label>
-            <input type="text" data-bind="cisco.group" placeholder="выбирается при первом подключении">
+            <label data-i18n="ui.f.cisco_group">Группа (connection profile)</label>
+            <input type="text" data-bind="cisco.group" data-i18n-placeholder="ui.ph.first_connect" placeholder="выбирается при первом подключении">
           </div>
           <div class="field" data-for="globalprotect" data-connect-to="portal">
-            <label>Шлюз</label>
-            <input type="text" data-bind="globalprotect.gateway" placeholder="выбирается при первом подключении">
+            <label data-i18n="ui.f.gateway">Шлюз</label>
+            <input type="text" data-bind="globalprotect.gateway" data-i18n-placeholder="ui.ph.first_connect" placeholder="выбирается при первом подключении">
           </div>
         </div>
 
         <div class="form" id="viewCertificate" hidden>
           <div class="field" data-for="fortinet">
-            <label>CA-сертификат (ca-file)</label>
+            <label data-i18n="ui.f.fo_ca">CA-сертификат (ca-file)</label>
             <div class="browse-wrap">
               <input type="text" data-bind="fortinet.caFile" placeholder="/etc/openfortivpn/ca-bundle.pem">
-              <div class="btn neutral" data-browse="fortinet.caFile">Обзор…</div>
+              <div class="btn neutral" data-browse="fortinet.caFile" data-i18n="ui.browse">Обзор…</div>
             </div>
           </div>
           <div class="field" data-for="fortinet">
-            <label>Клиентский сертификат (user-cert)</label>
+            <label data-i18n="ui.f.fo_cert">Клиентский сертификат (user-cert)</label>
             <div class="browse-wrap">
               <input type="text" data-bind="fortinet.userCert" placeholder="/home/user/.certs/client.pem">
-              <div class="btn neutral" data-browse="fortinet.userCert">Обзор…</div>
+              <div class="btn neutral" data-browse="fortinet.userCert" data-i18n="ui.browse">Обзор…</div>
             </div>
           </div>
           <div class="field" data-for="fortinet">
-            <label>Ключ клиента (user-key)</label>
+            <label data-i18n="ui.f.fo_key">Ключ клиента (user-key)</label>
             <div class="browse-wrap">
               <input type="text" data-bind="fortinet.userKey" placeholder="/home/user/.certs/client.key">
-              <div class="btn neutral" data-browse="fortinet.userKey">Обзор…</div>
+              <div class="btn neutral" data-browse="fortinet.userKey" data-i18n="ui.browse">Обзор…</div>
             </div>
           </div>
           <div class="field" data-for="fortinet">
-            <label>Доверенный сертификат, SHA-256 (trusted-cert)</label>
+            <label data-i18n="ui.f.fo_trusted">Доверенный сертификат, SHA-256 (trusted-cert)</label>
             <input type="text" class="mono" data-bind="fortinet.trustedCert" placeholder="e46d4aff08ba6914e64daa85bc6112a4…">
           </div>
           <div class="toggle-row bordered-top" data-for="fortinet">
             <div>
-              <div class="toggle-title">Не проверять сертификат сервера</div>
-              <div class="toggle-desc danger">insecure-ssl — только для тестовых сред</div>
+              <div class="toggle-title" data-i18n="ui.f.insecure">Не проверять сертификат сервера</div>
+              <div class="toggle-desc danger" data-i18n="ui.f.insecure_desc">insecure-ssl — только для тестовых сред</div>
             </div>
             <div class="switch danger" data-switch="fortinet.insecureSsl"><div class="knob"></div></div>
           </div>
           <div class="field" data-for="globalprotect">
-            <label>CA-сертификат (cafile)</label>
+            <label data-i18n="ui.f.oc_ca">CA-сертификат (cafile)</label>
             <div class="browse-wrap">
-              <input type="text" data-bind="globalprotect.caFile" placeholder="необязательно">
-              <div class="btn neutral" data-browse="globalprotect.caFile">Обзор…</div>
+              <input type="text" data-bind="globalprotect.caFile" data-i18n-placeholder="ui.ph.optional" placeholder="необязательно">
+              <div class="btn neutral" data-browse="globalprotect.caFile" data-i18n="ui.browse">Обзор…</div>
             </div>
           </div>
           <div class="field" data-for="globalprotect">
-            <label>Клиентский сертификат (certificate)</label>
+            <label data-i18n="ui.f.oc_cert">Клиентский сертификат (certificate)</label>
             <div class="browse-wrap">
-              <input type="text" data-bind="globalprotect.userCert" placeholder="необязательно">
-              <div class="btn neutral" data-browse="globalprotect.userCert">Обзор…</div>
+              <input type="text" data-bind="globalprotect.userCert" data-i18n-placeholder="ui.ph.optional" placeholder="необязательно">
+              <div class="btn neutral" data-browse="globalprotect.userCert" data-i18n="ui.browse">Обзор…</div>
             </div>
           </div>
           <div class="field" data-for="globalprotect">
-            <label>Ключ клиента (sslkey)</label>
+            <label data-i18n="ui.f.oc_key">Ключ клиента (sslkey)</label>
             <div class="browse-wrap">
-              <input type="text" data-bind="globalprotect.userKey" placeholder="необязательно">
-              <div class="btn neutral" data-browse="globalprotect.userKey">Обзор…</div>
+              <input type="text" data-bind="globalprotect.userKey" data-i18n-placeholder="ui.ph.optional" placeholder="необязательно">
+              <div class="btn neutral" data-browse="globalprotect.userKey" data-i18n="ui.browse">Обзор…</div>
             </div>
           </div>
           <div class="field" data-for="globalprotect">
-            <label>Сертификат сервера (servercert)</label>
-            <input type="text" class="mono" data-bind="globalprotect.serverCert" placeholder="pin-sha256:… — заполнится сам при первом подключении">
+            <label data-i18n="ui.f.oc_servercert">Сертификат сервера (servercert)</label>
+            <input type="text" class="mono" data-bind="globalprotect.serverCert" data-i18n-placeholder="ui.ph.servercert" placeholder="pin-sha256:… — заполнится сам при первом подключении">
           </div>
           <div class="field" data-for="cisco">
-            <label>CA-сертификат (cafile)</label>
+            <label data-i18n="ui.f.oc_ca">CA-сертификат (cafile)</label>
             <div class="browse-wrap">
-              <input type="text" data-bind="cisco.caFile" placeholder="необязательно">
-              <div class="btn neutral" data-browse="cisco.caFile">Обзор…</div>
+              <input type="text" data-bind="cisco.caFile" data-i18n-placeholder="ui.ph.optional" placeholder="необязательно">
+              <div class="btn neutral" data-browse="cisco.caFile" data-i18n="ui.browse">Обзор…</div>
             </div>
           </div>
           <div class="field" data-for="cisco">
-            <label>Клиентский сертификат (certificate)</label>
+            <label data-i18n="ui.f.oc_cert">Клиентский сертификат (certificate)</label>
             <div class="browse-wrap">
-              <input type="text" data-bind="cisco.userCert" placeholder="необязательно">
-              <div class="btn neutral" data-browse="cisco.userCert">Обзор…</div>
+              <input type="text" data-bind="cisco.userCert" data-i18n-placeholder="ui.ph.optional" placeholder="необязательно">
+              <div class="btn neutral" data-browse="cisco.userCert" data-i18n="ui.browse">Обзор…</div>
             </div>
           </div>
           <div class="field" data-for="cisco">
-            <label>Ключ клиента (sslkey)</label>
+            <label data-i18n="ui.f.oc_key">Ключ клиента (sslkey)</label>
             <div class="browse-wrap">
-              <input type="text" data-bind="cisco.userKey" placeholder="необязательно">
-              <div class="btn neutral" data-browse="cisco.userKey">Обзор…</div>
+              <input type="text" data-bind="cisco.userKey" data-i18n-placeholder="ui.ph.optional" placeholder="необязательно">
+              <div class="btn neutral" data-browse="cisco.userKey" data-i18n="ui.browse">Обзор…</div>
             </div>
           </div>
           <div class="field" data-for="cisco">
-            <label>Сертификат сервера (servercert)</label>
-            <input type="text" class="mono" data-bind="cisco.serverCert" placeholder="pin-sha256:… — заполнится сам при первом подключении">
+            <label data-i18n="ui.f.oc_servercert">Сертификат сервера (servercert)</label>
+            <input type="text" class="mono" data-bind="cisco.serverCert" data-i18n-placeholder="ui.ph.servercert" placeholder="pin-sha256:… — заполнится сам при первом подключении">
           </div>
         </div>
 
         <div class="form" id="viewAdvanced" hidden>
           <div class="toggle-row" data-for="fortinet">
             <div>
-              <div class="toggle-title">Настраивать DNS через туннель</div>
+              <div class="toggle-title" data-i18n="ui.f.set_dns">Настраивать DNS через туннель</div>
               <div class="toggle-desc">set-dns</div>
             </div>
             <div class="switch" data-switch="fortinet.setDns"><div class="knob"></div></div>
           </div>
           <div class="toggle-row" data-for="fortinet">
             <div>
-              <div class="toggle-title">Использовать peer DNS в pppd</div>
+              <div class="toggle-title" data-i18n="ui.f.peerdns">Использовать peer DNS в pppd</div>
               <div class="toggle-desc">pppd-use-peerdns</div>
             </div>
             <div class="switch" data-switch="fortinet.pppdUsePeerdns"><div class="knob"></div></div>
           </div>
           <div class="toggle-row" data-for="fortinet">
             <div>
-              <div class="toggle-title">Настраивать маршруты</div>
+              <div class="toggle-title" data-i18n="ui.f.set_routes">Настраивать маршруты</div>
               <div class="toggle-desc">set-routes</div>
             </div>
             <div class="switch" data-switch="fortinet.setRoutes"><div class="knob"></div></div>
           </div>
           <div class="toggle-row" data-for="fortinet">
             <div>
-              <div class="toggle-title">Два маршрута /1 вместо замены default route</div>
+              <div class="toggle-title" data-i18n="ui.f.half_routes">Два маршрута /1 вместо замены default route</div>
               <div class="toggle-desc">half-internet-routes</div>
             </div>
             <div class="switch" data-switch="fortinet.halfInternetRoutes"><div class="knob"></div></div>
           </div>
           <div class="field bordered-top" data-for="fortinet">
-            <label>Файл лога pppd (pppd-log)</label>
-            <input type="text" data-bind="fortinet.pppdLog" placeholder="/var/log/pppd.log (необязательно)">
+            <label data-i18n="ui.f.pppd_log">Файл лога pppd (pppd-log)</label>
+            <input type="text" data-bind="fortinet.pppdLog" data-i18n-placeholder="ui.ph.pppd_log" placeholder="/var/log/pppd.log (необязательно)">
           </div>
           <div class="toggle-row" data-for="globalprotect">
             <div>
-              <div class="toggle-title">Отправлять HIP report</div>
-              <div class="toggle-desc">csd-wrapper hipreport.sh — нужен, если шлюз проверяет состояние компьютера и рвёт соединение без отчёта</div>
+              <div class="toggle-title" data-i18n="ui.f.hip">Отправлять HIP report</div>
+              <div class="toggle-desc" data-i18n="ui.f.hip_desc">csd-wrapper hipreport.sh — нужен, если шлюз проверяет состояние компьютера и рвёт соединение без отчёта</div>
             </div>
             <div class="switch" data-switch="globalprotect.hipReport"><div class="knob"></div></div>
           </div>
           <div class="field" data-for="cisco">
-            <div class="toggle-desc">Для Cisco дополнительных настроек пока нет.</div>
+            <div class="toggle-desc" data-i18n="ui.f.cisco_no_advanced">Для Cisco дополнительных настроек пока нет.</div>
           </div>
         </div>
 
         <div class="status-view" id="viewStatus" hidden>
           <div class="status-check">✓</div>
-          <div class="status-title">Подключено</div>
+          <div class="status-title" data-i18n="ui.st.connected">Подключено</div>
           <div class="status-duration" id="statusDuration">00:00:00</div>
           <div class="status-grid">
-            <div class="stat-card"><div class="stat-label">IP-адрес</div><div class="stat-value" id="statusIp"></div></div>
-            <div class="stat-card"><div class="stat-label">Шлюз</div><div class="stat-value" id="statusGateway"></div></div>
-            <div class="stat-card"><div class="stat-label">Отправлено</div><div class="stat-value" id="statusTx"></div></div>
-            <div class="stat-card"><div class="stat-label">Получено</div><div class="stat-value" id="statusRx"></div></div>
+            <div class="stat-card"><div class="stat-label" data-i18n="ui.st.ip">IP-адрес</div><div class="stat-value" id="statusIp"></div></div>
+            <div class="stat-card"><div class="stat-label" data-i18n="ui.st.gateway">Шлюз</div><div class="stat-value" id="statusGateway"></div></div>
+            <div class="stat-card"><div class="stat-label" data-i18n="ui.st.sent">Отправлено</div><div class="stat-value" id="statusTx"></div></div>
+            <div class="stat-card"><div class="stat-label" data-i18n="ui.st.received">Получено</div><div class="stat-value" id="statusRx"></div></div>
           </div>
-          <div class="btn danger" id="disconnectBtn">Отключить</div>
+          <div class="btn danger" id="disconnectBtn" data-i18n="ui.disconnect">Отключить</div>
         </div>
 
         <div class="log-view" id="viewLog" hidden>
           <div class="log-header">
             <div id="logTitle">Вывод openfortivpn / pppd</div>
             <div class="log-actions">
-              <div class="link" id="copyLogBtn">Скопировать</div>
-              <div class="link" id="clearLogBtn">Очистить</div>
+              <div class="link" id="copyLogBtn" data-i18n="ui.copy">Скопировать</div>
+              <div class="link" id="clearLogBtn" data-i18n="ui.clear">Очистить</div>
             </div>
           </div>
           <div class="log-panel" id="logPanel"></div>
@@ -299,8 +299,8 @@
         <div class="otp-progress"><div class="otp-progress-fill" id="otpProgressFill"></div></div>
         <div class="otp-timer" id="otpTimer">Код действителен ещё 60 с</div>
         <div class="otp-actions">
-          <div class="btn neutral" id="otpCancelBtn">Отмена</div>
-          <div class="btn primary" id="otpSubmitBtn">Подтвердить</div>
+          <div class="btn neutral" id="otpCancelBtn" data-i18n="ui.cancel">Отмена</div>
+          <div class="btn primary" id="otpSubmitBtn" data-i18n="ui.confirm">Подтвердить</div>
         </div>
       </div>
     </div>
@@ -310,9 +310,9 @@
         <div class="otp-title" id="chooseTitle">Выберите шлюз</div>
         <div class="otp-sub" id="chooseTarget"></div>
         <div class="choose-options" id="chooseOptions"></div>
-        <div class="otp-sub">Выбор запомнится в профиле — в следующий раз Ingress подключится к этому шлюзу сам.</div>
+        <div class="otp-sub" data-i18n="ui.choose_remember">Выбор запомнится в профиле — в следующий раз Ingress подключится к этому шлюзу сам.</div>
         <div class="otp-actions">
-          <div class="btn neutral" id="chooseCancelBtn">Отмена</div>
+          <div class="btn neutral" id="chooseCancelBtn" data-i18n="ui.cancel">Отмена</div>
         </div>
       </div>
     </div>
@@ -322,72 +322,76 @@
         <img class="about-icon" src="./src/assets/app-icon.png" alt="Ingress">
         <div class="otp-title">Ingress</div>
         <div class="otp-sub" id="aboutVersion"></div>
-        <div class="about-desc">Несколько VPN-туннелей одновременно — Fortinet SSL-VPN и GlobalProtect (в том числе вход через SAML), чего не умеют официальные клиенты. VPN-клиенты openfortivpn и OpenConnect Ingress устанавливает сам.</div>
+        <div class="about-desc" data-i18n="ui.about_desc">Several VPN tunnels at once — Fortinet SSL-VPN, GlobalProtect (including SAML login) and Cisco Secure Client, which the official clients can't do. Ingress installs the openfortivpn and OpenConnect VPN clients itself.</div>
+        <div class="about-lang">
+          <label for="langSelect" data-i18n="ui.language">Language</label>
+          <select id="langSelect"></select>
+        </div>
         <div class="otp-sub" id="aboutAuthor"></div>
         <div class="otp-sub"><span class="link" id="aboutGithub"></span></div>
         <div class="otp-actions">
-          <div class="btn primary" id="aboutCloseBtn">Закрыть</div>
+          <div class="btn primary" id="aboutCloseBtn" data-i18n="ui.close">Закрыть</div>
         </div>
       </div>
     </div>
 
     <div class="otp-overlay" id="typeOverlay" hidden>
       <div class="otp-modal type-modal">
-        <div class="otp-title">Новый профиль</div>
-        <div class="otp-sub">Выберите тип VPN. Изменить его у профиля потом нельзя.</div>
+        <div class="otp-title" data-i18n="ui.type.title">Новый профиль</div>
+        <div class="otp-sub" data-i18n="ui.type.sub">Выберите тип VPN. Изменить его у профиля потом нельзя.</div>
         <div class="type-options">
           <div class="type-option" data-type="fortinet">
             <div class="type-name">Fortinet SSL-VPN</div>
-            <div class="type-desc">FortiGate · через openfortivpn</div>
+            <div class="type-desc" data-i18n="ui.type.fortinet">FortiGate · через openfortivpn</div>
           </div>
           <div class="type-option" data-type="cisco">
             <div class="type-name">Cisco Secure Client</div>
-            <div class="type-desc">AnyConnect: Cisco ASA, FTD, ocserv · через OpenConnect</div>
+            <div class="type-desc" data-i18n="ui.type.cisco">AnyConnect: Cisco ASA, FTD, ocserv · через OpenConnect</div>
           </div>
           <div class="type-option" data-type="globalprotect">
             <div class="type-name">GlobalProtect</div>
-            <div class="type-desc">Palo Alto Networks · через OpenConnect</div>
+            <div class="type-desc" data-i18n="ui.type.gp">Palo Alto Networks · через OpenConnect</div>
           </div>
         </div>
         <div class="otp-actions">
-          <div class="btn neutral" id="typeCancelBtn">Отмена</div>
+          <div class="btn neutral" id="typeCancelBtn" data-i18n="ui.cancel">Отмена</div>
         </div>
       </div>
     </div>
 
     <div class="otp-overlay" id="componentsOverlay" hidden>
       <div class="otp-modal components-modal">
-        <div class="otp-title">Компоненты</div>
-        <div class="otp-sub">VPN-клиенты, которые Ingress запускает для подключения. Ingress сам скачивает и устанавливает свои проверенные сборки, Homebrew не нужен.</div>
+        <div class="otp-title" data-i18n="ui.components">Компоненты</div>
+        <div class="otp-sub" data-i18n="ui.comp.sub">VPN-клиенты, которые Ingress запускает для подключения. Ingress сам скачивает и устанавливает свои проверенные сборки, Homebrew не нужен.</div>
         <div class="components-list" id="componentsList"></div>
-        <div class="otp-sub">Лицензии и исходники сборок: <span class="link" id="componentsSources">github.com/azizbekatajanov/ingress-deps</span></div>
+        <div class="otp-sub"><span data-i18n="ui.comp.sources">Лицензии и исходники сборок:</span> <span class="link" id="componentsSources">github.com/azizbekatajanov/ingress-deps</span></div>
         <div class="otp-actions">
-          <div class="btn primary" id="componentsCloseBtn">Готово</div>
+          <div class="btn primary" id="componentsCloseBtn" data-i18n="ui.done">Готово</div>
         </div>
       </div>
     </div>
 
     <div class="otp-overlay" id="deleteOverlay" hidden>
       <div class="otp-modal">
-        <div class="otp-title" id="deleteTitle">Удалить профиль?</div>
-        <div class="otp-sub" id="deleteSub">Профиль и сохранённый пароль будут удалены без возможности восстановления.</div>
+        <div class="otp-title" id="deleteTitle" data-i18n="ui.del.title">Удалить профиль?</div>
+        <div class="otp-sub" id="deleteSub" data-i18n="ui.del.sub">Профиль и сохранённый пароль будут удалены без возможности восстановления.</div>
         <div class="otp-actions">
-          <div class="btn neutral" id="deleteCancelBtn">Отмена</div>
-          <div class="btn danger" id="deleteConfirmBtn">Удалить</div>
+          <div class="btn neutral" id="deleteCancelBtn" data-i18n="ui.cancel">Отмена</div>
+          <div class="btn danger" id="deleteConfirmBtn" data-i18n="ui.delete">Удалить</div>
         </div>
       </div>
     </div>
 
     <div class="otp-overlay" id="quitOverlay" hidden>
       <div class="otp-modal">
-        <div class="otp-title">Выйти из Ingress?</div>
-        <div class="otp-sub">Активные VPN-подключения будут отключены.</div>
+        <div class="otp-title" data-i18n="ui.quit.title">Выйти из Ingress?</div>
+        <div class="otp-sub" data-i18n="ui.quit.sub">Активные VPN-подключения будут отключены.</div>
         <label class="quit-remember">
-          <input type="checkbox" id="quitRemember"> Не спрашивать больше
+          <input type="checkbox" id="quitRemember"> <span data-i18n="ui.quit.remember">Не спрашивать больше</span>
         </label>
         <div class="otp-actions">
-          <div class="btn neutral" id="quitCancelBtn">Отмена</div>
-          <div class="btn danger" id="quitConfirmBtn">Выйти</div>
+          <div class="btn neutral" id="quitCancelBtn" data-i18n="ui.cancel">Отмена</div>
+          <div class="btn danger" id="quitConfirmBtn" data-i18n="ui.quit.confirm">Выйти</div>
         </div>
       </div>
     </div>

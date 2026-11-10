@@ -70,14 +70,14 @@ func runRootComponentCommand(cmd string, args []string) int {
 
 func rootInstall(args []string) error {
 	if os.Geteuid() != 0 {
-		return errors.New("установщик запущен без прав администратора")
+		return errors.New(T("root.err.not_root_install"))
 	}
 	if len(args) < 2 {
 		return errors.New("usage: --install-component <name> <archive>")
 	}
 	name, archive := args[0], args[1]
 	if _, ok := lookupComponent(name); !ok {
-		return fmt.Errorf("неизвестный компонент %q", name)
+		return errors.New(T("comp.err.unknown", name))
 	}
 	manifest, err := rootManifest(args[2:])
 	if err != nil {
@@ -85,7 +85,7 @@ func rootInstall(args []string) error {
 	}
 	build, ok := manifest[name][platformKey()]
 	if !ok || build.SHA256 == "" {
-		return fmt.Errorf("в манифесте нет сборки %s для %s", name, platformKey())
+		return errors.New(T("root.err.no_manifest_build", name, platformKey()))
 	}
 
 	fi, err := os.Stat(archive)
@@ -93,7 +93,7 @@ func rootInstall(args []string) error {
 		return err
 	}
 	if !fi.Mode().IsRegular() || fi.Size() > maxArchiveSize {
-		return errors.New("архив недопустимого типа или размера")
+		return errors.New(T("root.err.bad_archive"))
 	}
 	data, err := os.ReadFile(archive)
 	if err != nil {
@@ -101,7 +101,7 @@ func rootInstall(args []string) error {
 	}
 	sum := sha256.Sum256(data)
 	if got := hex.EncodeToString(sum[:]); !strings.EqualFold(got, build.SHA256) {
-		return fmt.Errorf("контрольная сумма архива не совпадает с манифестом (%s)", got)
+		return errors.New(T("root.err.checksum", got))
 	}
 
 	base := componentsBaseDir()
@@ -135,11 +135,11 @@ func installArchive(data []byte, name string, build ComponentBuild, compsDir str
 	}()
 
 	if err := extractTarGz(data, staging); err != nil {
-		return fmt.Errorf("распаковка: %w", err)
+		return fmt.Errorf("%s: %w", T("root.err.unpack"), err)
 	}
 	binFi, err := os.Lstat(filepath.Join(staging, "bin", name))
 	if err != nil || !binFi.Mode().IsRegular() || binFi.Mode().Perm()&0o111 == 0 {
-		return fmt.Errorf("в архиве нет исполняемого bin/%s", name)
+		return errors.New(T("root.err.no_bin", name))
 	}
 
 	info, _ := json.MarshalIndent(installedInfo{
@@ -178,14 +178,14 @@ func installArchive(data []byte, name string, build ComponentBuild, compsDir str
 
 func rootRemove(args []string) error {
 	if os.Geteuid() != 0 {
-		return errors.New("удаление запущено без прав администратора")
+		return errors.New(T("root.err.not_root_remove"))
 	}
 	if len(args) != 1 {
 		return errors.New("usage: --remove-component <name>")
 	}
 	name := args[0]
 	if _, ok := lookupComponent(name); !ok {
-		return fmt.Errorf("неизвестный компонент %q", name)
+		return errors.New(T("comp.err.unknown", name))
 	}
 	target := componentDir(name)
 	fi, err := os.Lstat(target)
@@ -196,7 +196,7 @@ func rootRemove(args []string) error {
 		return err
 	}
 	if !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("%s не является каталогом", target)
+		return errors.New(T("root.err.not_dir", target))
 	}
 	return os.RemoveAll(target)
 }
@@ -215,7 +215,7 @@ func ensureRootDir(dir string) error {
 		return err
 	}
 	if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
-		return fmt.Errorf("%s должен быть обычным каталогом", dir)
+		return errors.New(T("root.err.plain_dir", dir))
 	}
 	if err := os.Chown(dir, 0, 0); err != nil {
 		return err
@@ -246,7 +246,7 @@ func extractTarGz(data []byte, dest string) error {
 		}
 		clean := path.Clean(name)
 		if path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
-			return fmt.Errorf("недопустимый путь в архиве: %q", hdr.Name)
+			return errors.New(T("root.err.bad_path", hdr.Name))
 		}
 		target := filepath.Join(dest, filepath.FromSlash(clean))
 
@@ -274,12 +274,12 @@ func extractTarGz(data []byte, dest string) error {
 			}
 			total += n
 			if total > maxExtractedSize {
-				return errors.New("распакованный архив слишком большой")
+				return errors.New(T("root.err.unpacked_too_big"))
 			}
 		case tar.TypeXGlobalHeader:
 			continue
 		default:
-			return fmt.Errorf("неподдерживаемый тип записи %q в архиве (%s)", hdr.Typeflag, hdr.Name)
+			return errors.New(T("root.err.entry_type", string(hdr.Typeflag), hdr.Name))
 		}
 	}
 }

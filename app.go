@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 
@@ -26,11 +27,16 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
-	store, err := NewProfileStore()
-	if err != nil {
-		log.Fatalf("ingress: failed to open profile store: %v", err)
+	// main opens the store early (the tray and language need it before
+	// Wails starts); tests and other callers may not have.
+	if a.store == nil {
+		store, err := NewProfileStore()
+		if err != nil {
+			log.Fatalf("ingress: failed to open profile store: %v", err)
+		}
+		a.store = store
 	}
-	a.store = store
+	store := a.store
 	a.components = NewComponentManager(store)
 	a.manager = NewManager(ctx, store, a.components)
 	if a.tray != nil {
@@ -107,6 +113,31 @@ func (a *App) SetPassword(profileID, password string) error {
 }
 
 // --- Theme ---
+
+// GetI18n returns the catalog for the language in effect.
+func (a *App) GetI18n() i18nBundle {
+	return bundleFor(language(), a.store.Language())
+}
+
+// SetLanguage saves the choice ("" = follow the system), switches to it and
+// tells the tray; the frontend re-renders from the returned catalog.
+func (a *App) SetLanguage(setting string) (i18nBundle, error) {
+	if setting != "" && !isSupportedLanguage(setting) {
+		return i18nBundle{}, errors.New(T("err.unknown_language", setting))
+	}
+	if err := a.store.SetLanguage(setting); err != nil {
+		return i18nBundle{}, err
+	}
+	setLanguage(resolveLanguage(setting))
+	if a.tray != nil {
+		a.tray.OnLanguageChanged()
+	}
+	if a.ctx != nil {
+		wailsRuntime.MenuSetApplicationMenu(a.ctx, buildAppMenu(a))
+		wailsRuntime.MenuUpdateApplicationMenu(a.ctx)
+	}
+	return a.GetI18n(), nil
+}
 
 func (a *App) GetTheme() string {
 	return a.store.Theme()

@@ -5,9 +5,37 @@ import {
   GetComponents, InstallComponent, RemoveComponent, SetComponentOverride, BrowseFile,
   PickProfileLogo, RemoveProfileLogo, GetProfileLogos,
   WindowMinimise, WindowToggleFullscreen, HideWindow, ConfirmQuit,
-  GetAppInfo,
+  GetAppInfo, GetI18n, SetLanguage,
 } from '../wailsjs/go/main/App';
 import { EventsOn, BrowserOpenURL, ClipboardSetText } from '../wailsjs/runtime/runtime';
+
+// ---- i18n: the catalog comes from Go (i18n/<lang>.json), see i18n.go ----
+const i18n = { language: 'en', setting: '', languages: ['en'], strings: {} };
+function t(key, ...args) {
+  const s = i18n.strings[key] ?? key;
+  if (!args.length) return s;
+  return s.replace(/\{(\d+)\}/g, (m, i) => (i < args.length ? String(args[i]) : m));
+}
+// Static text in index.html carries data-i18n / -placeholder / -title.
+function applyI18n() {
+  document.documentElement.lang = i18n.language;
+  document.querySelectorAll('[data-i18n]').forEach(n => { n.textContent = t(n.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(n => { n.placeholder = t(n.dataset.i18nPlaceholder); });
+  document.querySelectorAll('[data-i18n-title]').forEach(n => { n.title = t(n.dataset.i18nTitle); });
+  const sel = $('#langSelect');
+  sel.innerHTML = '';
+  // "System (Русский)" first, then each language in its own name.
+  const sys = document.createElement('option');
+  sys.value = ''; sys.textContent = t('ui.language.system', t('lang.' + (i18n.setting ? i18n.systemLanguage : i18n.language)));
+  sel.appendChild(sys);
+  for (const l of i18n.languages) {
+    const o = document.createElement('option');
+    o.value = l; o.textContent = t('lang.' + l);
+    sel.appendChild(o);
+  }
+  sel.value = i18n.setting || '';
+}
+function setI18n(bundle) { Object.assign(i18n, bundle); applyI18n(); }
 
 const TYPE_LABELS = { fortinet: 'Fortinet', globalprotect: 'GlobalProtect', cisco: 'Cisco' };
 const PROFILE_COLORS = ['#ff6961', '#5ac8fa', '#ffd60a', '#bf5af2', '#30d158', '#ff9f0a'];
@@ -55,7 +83,7 @@ function chooseProfile() {
   return state.profiles.find(p => snapshotOf(p.id).status === 'choose');
 }
 async function submitChoice(id, value) {
-  try { await SubmitPrompt(id, value); } catch (e) { alert('Не удалось отправить выбор: ' + errText(e)); }
+  try { await SubmitPrompt(id, value); } catch (e) { alert(t('js.err.choice', errText(e))); }
 }
 const GENERIC_2FA_LABEL = /^(second\s+)?(password|passcode|pass\s*code|answer|response|otp|token|code|verification\s+code|пароль|код)$/i;
 function otpMinLength(snap) { return snap && snap.promptLabel ? 1 : 4; }
@@ -66,9 +94,9 @@ function formatDuration(sec) {
   return `${pad(Math.floor(sec/3600))}:${pad(Math.floor((sec%3600)/60))}:${pad(sec%60)}`;
 }
 function formatBytes(n) {
-  if (n < 1024) return n + ' Б';
-  if (n < 1024*1024) return (n/1024).toFixed(1) + ' КБ';
-  return (n/1024/1024).toFixed(2) + ' МБ';
+  if (n < 1024) return t('js.bytes.b', n);
+  if (n < 1024*1024) return t('js.bytes.kb', (n/1024).toFixed(1));
+  return t('js.bytes.mb', (n/1024/1024).toFixed(2));
 }
 
 // Profile settings live in nested objects per VPN type (profile.fortinet /
@@ -82,27 +110,27 @@ function setSetting(p, path, value) {
   o[keys[keys.length - 1]] = value;
 }
 function hostLine(p) {
-  const where = p.host ? `${p.host}:${p.port}` : 'не настроен';
+  const where = p.host ? `${p.host}:${p.port}` : t('js.not_configured');
   return `${TYPE_LABELS[p.type] || ''} · ${where}`;
 }
 
 // ---- backend-driven actions ----
 async function startConnect(id) {
   state.showLog = false;
-  try { await Connect(id); } catch (e) { alert('Не удалось подключиться: ' + errText(e)); }
+  try { await Connect(id); } catch (e) { alert(t('js.err.connect', errText(e))); }
 }
 async function cancelConnect(id) { try { await CancelConnect(id); } catch (e) { /* ignore */ } }
 async function disconnect(id) { try { await Disconnect(id); } catch (e) { /* ignore */ } }
 async function submitOtp(id) {
   if (!state.otpCode || state.otpCode.length < otpMinLength(snapshotOf(id))) return;
-  try { await SubmitOtp(id, state.otpCode); state.otpCode = ''; } catch (e) { alert('Ошибка проверки кода: ' + errText(e)); }
+  try { await SubmitOtp(id, state.otpCode); state.otpCode = ''; } catch (e) { alert(t('js.err.code', errText(e))); }
 }
 
 function addProfile() { $('#typeOverlay').hidden = false; }
 async function createProfile(type) {
   $('#typeOverlay').hidden = true;
   let p;
-  try { p = await AddProfile(type); } catch (e) { alert('Не удалось создать профиль: ' + errText(e)); return; }
+  try { p = await AddProfile(type); } catch (e) { alert(t('js.err.create', errText(e))); return; }
   state.profiles.push(p);
   state.selectedProfileId = p.id;
   // Straight into settings: a fresh profile has nothing to show yet.
@@ -114,17 +142,17 @@ function askRemoveProfile(id) {
   const p = state.profiles.find(x => x.id === id);
   if (!p || state.profiles.length <= 1) return;
   pendingDeleteId = id;
-  $('#deleteTitle').textContent = `Удалить профиль «${p.name || 'Без названия'}»?`;
+  $('#deleteTitle').textContent = t('js.del.title', p.name || t('js.untitled'));
   const st = snapshotOf(id).status;
   $('#deleteSub').textContent = st === 'disconnected'
-    ? 'Профиль и сохранённый пароль будут удалены без возможности восстановления.'
-    : 'VPN-подключение будет разорвано, профиль и сохранённый пароль будут удалены без возможности восстановления.';
+    ? t('ui.del.sub')
+    : t('js.del.sub_connected');
   $('#deleteOverlay').hidden = false;
 }
 function closeDeleteDialog() { pendingDeleteId = null; $('#deleteOverlay').hidden = true; }
 async function removeProfile(id) {
   if (state.profiles.length <= 1) return;
-  try { await RemoveProfile(id); } catch (e) { alert('Не удалось удалить профиль: ' + e); return; }
+  try { await RemoveProfile(id); } catch (e) { alert(t('js.err.delete', errText(e))); return; }
   state.profiles = state.profiles.filter(x => x.id !== id);
   delete state.snapshots[id]; delete state.passwords[id]; delete state.logos[id];
   if (state.selectedProfileId === id) state.selectedProfileId = state.profiles[0].id;
@@ -218,11 +246,11 @@ function render() {
   const pill = $('#statusPill'); const btn = $('#connectBtn');
   pill.className = 'pill'; btn.className = 'btn primary';
   if (!sp) { pill.textContent = '—'; }
-  else if (snap.status === 'connected') { pill.classList.add('connected'); pill.textContent = 'Подключено'; btn.className = 'btn danger'; btn.textContent = 'Отключить'; btn.onclick = () => disconnect(sp.id); }
-  else if (snap.status === 'connecting') { pill.classList.add('pending'); pill.textContent = 'Подключение…'; btn.className = 'btn neutral'; btn.textContent = 'Подключение…'; btn.onclick = () => cancelConnect(sp.id); }
-  else if (snap.status === 'choose') { pill.classList.add('pending'); pill.textContent = 'Выбор шлюза'; btn.className = 'btn neutral'; btn.textContent = 'Выбор шлюза'; btn.onclick = () => cancelConnect(sp.id); }
-  else if (snap.status === 'otp') { pill.classList.add('pending'); pill.textContent = 'Ожидание кода'; btn.className = 'btn neutral'; btn.textContent = 'Ожидание кода'; btn.onclick = () => cancelConnect(sp.id); }
-  else { pill.textContent = 'Не подключено'; btn.textContent = 'Подключить'; btn.onclick = () => startConnect(sp.id); }
+  else if (snap.status === 'connected') { pill.classList.add('connected'); pill.textContent = t('ui.st.connected'); btn.className = 'btn danger'; btn.textContent = t('ui.disconnect'); btn.onclick = () => disconnect(sp.id); }
+  else if (snap.status === 'connecting') { pill.classList.add('pending'); pill.textContent = t('js.st.connecting'); btn.className = 'btn neutral'; btn.textContent = t('js.st.connecting'); btn.onclick = () => cancelConnect(sp.id); }
+  else if (snap.status === 'choose') { pill.classList.add('pending'); pill.textContent = t('js.st.choose'); btn.className = 'btn neutral'; btn.textContent = t('js.st.choose'); btn.onclick = () => cancelConnect(sp.id); }
+  else if (snap.status === 'otp') { pill.classList.add('pending'); pill.textContent = t('js.st.otp'); btn.className = 'btn neutral'; btn.textContent = t('js.st.otp'); btn.onclick = () => cancelConnect(sp.id); }
+  else { pill.textContent = t('tray.not_connected'); btn.textContent = t('js.connect'); btn.onclick = () => startConnect(sp.id); }
 
   $('#gearBtn').style.display = sp && snap.status !== 'disconnected' ? 'none' : 'flex';
 
@@ -261,12 +289,12 @@ function render() {
     renderInstallBanner(sp);
     renderErrorBanner(snap);
   }
-  if (showConnecting) $('#connectingTitle').textContent = `Подключение к ${sp.host}:${sp.port}…`;
+  if (showConnecting) $('#connectingTitle').textContent = t('js.connecting_to', `${sp.host}:${sp.port}`);
 
   if (sp && !isConnected) fillForm(sp);
   if (isConnected && state.activeTab === 'status') fillStatus(sp, snap);
   if ((isConnected && state.activeTab === 'log') || showPastLog) {
-    $('#logTitle').textContent = sp.type === 'fortinet' ? 'Вывод openfortivpn / pppd' : 'Вывод openconnect';
+    $('#logTitle').textContent = sp.type === 'fortinet' ? t('js.log.fortinet') : t('js.log.openconnect');
     fillLog(snap);
   }
 
@@ -282,20 +310,20 @@ function render() {
     // labels get a plain explanation instead; a specific one is shown as is.
     const textPrompt = !!otpSnap.promptLabel;
     const genericLabel = textPrompt && GENERIC_2FA_LABEL.test(otpSnap.promptLabel.trim());
-    $('#otpTitle').textContent = textPrompt ? (otpSnap.promptMessage || 'Требуется второй фактор') : 'Требуется код подтверждения';
+    $('#otpTitle').textContent = textPrompt ? (otpSnap.promptMessage || t('js.otp.second_factor')) : t('js.otp.title');
     $('#otpLabel').hidden = !textPrompt;
     $('#otpLabel').textContent = !textPrompt ? ''
-      : genericLabel ? 'Введите одноразовый код или ответ сервера (например, push для Duo). Пароль уже отправлен.'
-      : `Сервер запрашивает: ${otpSnap.promptLabel}`;
+      : genericLabel ? t('js.otp.generic_hint')
+      : t('js.otp.server_asks', otpSnap.promptLabel);
     $('#otpTarget').textContent = `${otp.username || '—'}@${otp.host || '—'}`;
     const input = $('#otpCode');
     input.maxLength = textPrompt ? 128 : 8;
-    input.placeholder = !textPrompt ? '000000' : genericLabel ? 'Код' : otpSnap.promptLabel;
+    input.placeholder = !textPrompt ? '000000' : genericLabel ? t('js.otp.code') : otpSnap.promptLabel;
     input.inputMode = textPrompt ? 'text' : 'numeric';
     input.value = state.otpCode;
     const windowSec = textPrompt ? 120 : 60;
     $('#otpProgressFill').style.width = Math.max(0, Math.min(100, (otpSnap.otpSecondsLeft/windowSec)*100)) + '%';
-    $('#otpTimer').textContent = `Ответ ждут ещё ${otpSnap.otpSecondsLeft} с`;
+    $('#otpTimer').textContent = t('js.otp.timer', otpSnap.otpSecondsLeft);
     $('#otpSubmitBtn').style.opacity = (!state.otpCode || state.otpCode.length < otpMinLength(otpSnap)) ? 0.5 : 1;
   }
 
@@ -304,7 +332,7 @@ function render() {
   $('#chooseOverlay').hidden = !ch;
   if (ch) {
     const chSnap = snapshotOf(ch.id);
-    $('#chooseTitle').textContent = chSnap.promptLabel === 'GATEWAY:' ? 'Выберите шлюз' : (chSnap.promptLabel || 'Выберите вариант').replace(/:$/, '');
+    $('#chooseTitle').textContent = chSnap.promptLabel === 'GATEWAY:' ? t('js.choose.gateway') : (/group/i.test(chSnap.promptLabel || '') ? t('js.choose.group') : (chSnap.promptLabel || t('js.choose.option')).replace(/:$/, ''));
     $('#chooseTarget').textContent = ch.host ? `${ch.name} · ${ch.host}` : ch.name;
     const box = $('#chooseOptions');
     const key = ch.id + '|' + (chSnap.promptOptions || []).join('|');
@@ -329,11 +357,11 @@ function renderErrorBanner(snap) {
   const host = $('#errorBanner');
   host.innerHTML = '';
   if (!snap.lastError) return;
-  const b = el('div', 'banner error', `Не удалось подключиться: ${snap.lastError}`);
+  const b = el('div', 'banner error', t('js.err.connect', snap.lastError));
   if ((snap.logLines || []).length) {
     const actions = el('div', 'banner-actions');
-    actions.appendChild(actionBtn('neutral', 'Журнал', () => { state.showLog = true; render(); }));
-    actions.appendChild(actionBtn('neutral', 'Скопировать журнал', () => copyLog(snap)));
+    actions.appendChild(actionBtn('neutral', t('ui.tab.log'), () => { state.showLog = true; render(); }));
+    actions.appendChild(actionBtn('neutral', t('js.copy_log'), () => copyLog(snap)));
     b.appendChild(actions);
   }
   host.appendChild(b);
@@ -343,11 +371,11 @@ function logText(snap) {
   return (snap.logLines || []).map(l => `[${l.ts}] ${l.text}`).join('\n');
 }
 async function copyLog(snap) {
-  try { await ClipboardSetText(logText(snap)); } catch (e) { alert('Не удалось скопировать: ' + errText(e)); }
+  try { await ClipboardSetText(logText(snap)); } catch (e) { alert(t('js.err.copy', errText(e))); }
 }
 
 // ---- components (openfortivpn / openconnect binaries) ----
-const SOURCE_LABELS = { managed: 'встроенная сборка', override: 'свой путь', system: 'системный' };
+const SOURCE_LABELS = { managed: 'js.src.managed', override: 'js.src.override', system: 'js.src.system' };
 
 function componentByName(name) { return state.components.find(c => c.name === name); }
 function componentForProfile(p) { return (p.type === 'globalprotect' || p.type === 'cisco') ? 'openconnect' : 'openfortivpn'; }
@@ -385,10 +413,10 @@ async function setComponentOverride(name, path) {
 function progressText(c, pr) {
   if (pr.phase === 'download') {
     return pr.total > 0
-      ? `Загрузка ${c.title}… ${Math.round(pr.done / pr.total * 100)}%`
-      : `Загрузка ${c.title}… ${formatBytes(pr.done)}`;
+      ? t('js.comp.downloading', c.title, `${Math.round(pr.done / pr.total * 100)}%`)
+      : t('js.comp.downloading', c.title, formatBytes(pr.done));
   }
-  return 'Подтвердите действие паролем администратора…';
+  return t('js.comp.admin');
 }
 function progressBar(pr) {
   const bar = el('div', 'progress');
@@ -424,28 +452,28 @@ function renderInstallBanner(p) {
   const actions = el('div', 'banner-actions');
   if (!c.activeSource) {
     if (c.broken) {
-      b = el('div', 'banner error', `Встроенный ${c.title} не прошёл проверку целостности (${c.broken}) и не будет запущен.`);
-      if (c.available) actions.appendChild(actionBtn('primary', 'Переустановить', () => runComponentAction(c.name, 'install')));
+      b = el('div', 'banner error', t('js.comp.broken_banner', c.title, c.broken));
+      if (c.available) actions.appendChild(actionBtn('primary', t('js.comp.reinstall'), () => runComponentAction(c.name, 'install')));
     } else if (c.available) {
-      b = el('div', 'banner', `Для подключения к ${c.vpn} нужен ${c.title}. Ingress скачает проверенную сборку ${c.latestVersion} и попросит пароль администратора для установки.`);
-      actions.appendChild(actionBtn('primary', `Установить ${c.title}`, () => runComponentAction(c.name, 'install')));
+      b = el('div', 'banner', t('js.comp.need_banner', c.vpn, c.title, c.latestVersion));
+      actions.appendChild(actionBtn('primary', t('js.comp.install_x', c.title), () => runComponentAction(c.name, 'install')));
     } else {
-      b = el('div', 'banner error', `Для подключения к ${c.vpn} нужен ${c.title}, но готовой сборки для этой системы пока нет. Укажите путь к своему ${c.title} в «Компоненты».`);
+      b = el('div', 'banner error', t('js.comp.no_build_banner', c.vpn, c.title));
     }
-    if (!c.available || c.broken) actions.appendChild(actionBtn('neutral', 'Компоненты', showComponents));
+    if (!c.available || c.broken) actions.appendChild(actionBtn('neutral', t('ui.components'), showComponents));
   } else if (c.activeSource === 'system') {
     // 1.0.x users (or anyone with a brew/apt install): never block them,
     // offer the switch to the pinned build.
-    const intro = `Найден системный ${c.title} ${c.systemVersion || ''} (${c.systemPath}).`;
+    const intro = t('js.comp.system_found', c.title, c.systemVersion || '', c.systemPath);
     const tail = c.available
-      ? ` Ingress теперь ставит собственную проверенную сборку ${c.latestVersion}, но может продолжить использовать системную.`
-      : ' Встроенной сборки для этой системы пока нет, используется системный.';
+      ? ' ' + t('js.comp.system_tail', c.latestVersion)
+      : ' ' + t('js.comp.system_only');
     b = el('div', c.warning ? 'banner error' : 'banner', intro + tail + (c.warning ? ' ' + c.warning : ''));
-    if (c.available) actions.appendChild(actionBtn('primary', 'Установить встроенный', () => runComponentAction(c.name, 'install')));
-    actions.appendChild(actionBtn('neutral', 'Использовать системный', () => setComponentOverride(c.name, c.systemPath)));
+    if (c.available) actions.appendChild(actionBtn('primary', t('js.comp.install_builtin'), () => runComponentAction(c.name, 'install')));
+    actions.appendChild(actionBtn('neutral', t('js.comp.use_system'), () => setComponentOverride(c.name, c.systemPath)));
   } else if (c.warning) {
     b = el('div', 'banner error', c.warning);
-    if (c.available) actions.appendChild(actionBtn('primary', 'Установить встроенный', async () => {
+    if (c.available) actions.appendChild(actionBtn('primary', t('js.comp.install_builtin'), async () => {
       await setComponentOverride(c.name, '');
       await runComponentAction(c.name, 'install');
     }));
@@ -465,12 +493,12 @@ function showComponents() {
 }
 
 function componentState(c) {
-  if (state.componentProgress[c.name]) return ['Установка…', 'warn'];
-  if (c.broken) return ['Повреждён', 'bad'];
-  if (!c.activeSource) return ['Не установлен', 'bad'];
-  if (c.warning) return ['Проблемная версия', 'bad'];
-  if (c.activeSource === 'managed') return [c.updateAvailable ? 'Есть обновление' : 'Установлен', c.updateAvailable ? 'warn' : 'ok'];
-  return [c.activeSource === 'override' ? 'Свой путь' : 'Системный', 'warn'];
+  if (state.componentProgress[c.name]) return [t('js.comp.st.installing'), 'warn'];
+  if (c.broken) return [t('js.comp.st.broken'), 'bad'];
+  if (!c.activeSource) return [t('js.comp.st.missing'), 'bad'];
+  if (c.warning) return [t('js.comp.st.bad_version'), 'bad'];
+  if (c.activeSource === 'managed') return [c.updateAvailable ? t('js.comp.st.update') : t('js.comp.st.installed'), c.updateAvailable ? 'warn' : 'ok'];
+  return [c.activeSource === 'override' ? t('js.comp.st.override') : t('js.comp.st.system'), 'warn'];
 }
 
 function renderComponents() {
@@ -490,13 +518,13 @@ function renderComponents() {
 
     if (c.activePath) {
       const ver = c.activeSource === 'managed' ? c.installedVersion : (c.activeSource === 'override' ? c.overrideVersion : c.systemVersion);
-      row.appendChild(el('div', 'component-line', `Используется: ${c.activePath}${ver ? ' · ' + ver : ''} (${SOURCE_LABELS[c.activeSource]})`));
+      row.appendChild(el('div', 'component-line', t('js.comp.in_use', `${c.activePath}${ver ? ' · ' + ver : ''}`, t(SOURCE_LABELS[c.activeSource]))));
     }
-    if (c.installed) row.appendChild(el('div', 'component-line', `Встроенная сборка ${c.installedVersion} установлена${c.updateAvailable ? `, доступна ${c.latestVersion}` : ''}.`));
-    else if (c.available) row.appendChild(el('div', 'component-line', `Встроенная сборка ${c.latestVersion} доступна для установки.`));
-    else row.appendChild(el('div', 'component-line', 'Встроенной сборки для этой системы пока нет.'));
-    if (c.override && (c.installed || c.available)) row.appendChild(el('div', 'component-line', 'Пока задан свой путь, встроенная сборка не используется — нажмите «Сбросить», чтобы переключиться на неё.'));
-    if (c.broken) row.appendChild(el('div', 'component-line error', `Проверка целостности не пройдена: ${c.broken}`));
+    if (c.installed) row.appendChild(el('div', 'component-line', (c.updateAvailable ? t('js.comp.installed_update', c.installedVersion, c.latestVersion) : t('js.comp.installed_v', c.installedVersion))));
+    else if (c.available) row.appendChild(el('div', 'component-line', t('js.comp.available', c.latestVersion)));
+    else row.appendChild(el('div', 'component-line', t('js.comp.no_build')));
+    if (c.override && (c.installed || c.available)) row.appendChild(el('div', 'component-line', t('js.comp.override_note')));
+    if (c.broken) row.appendChild(el('div', 'component-line error', t('js.comp.integrity_failed', c.broken)));
     if (c.warning) row.appendChild(el('div', 'component-line warning', c.warning));
 
     const pr = state.componentProgress[c.name];
@@ -506,30 +534,30 @@ function renderComponents() {
     } else {
       const actions = el('div', 'component-actions');
       if (c.available) {
-        const text = !c.installed ? 'Установить' : (c.updateAvailable ? 'Обновить' : 'Переустановить');
+        const text = !c.installed ? t('js.comp.install') : (c.updateAvailable ? t('js.comp.update') : t('js.comp.reinstall'));
         actions.appendChild(actionBtn(c.installed && !c.updateAvailable && !c.broken ? 'neutral' : 'primary', text, () => runComponentAction(c.name, 'install')));
       }
-      if (c.installed) actions.appendChild(actionBtn('neutral', 'Удалить', () => runComponentAction(c.name, 'remove')));
+      if (c.installed) actions.appendChild(actionBtn('neutral', t('ui.delete'), () => runComponentAction(c.name, 'remove')));
       if (actions.childElementCount) row.appendChild(actions);
     }
 
-    row.appendChild(el('div', 'component-label', 'Свой путь (необязательно)'));
+    row.appendChild(el('div', 'component-label', t('js.comp.override_label')));
     const ov = el('div', 'component-override');
     const input = document.createElement('input');
     input.type = 'text';
-    input.placeholder = c.systemPath || `/путь/к/${c.name}`;
+    input.placeholder = c.systemPath || t('js.comp.path_ph', c.name);
     input.value = c.override || '';
     const commit = () => { if (input.value.trim() !== (c.override || '')) setComponentOverride(c.name, input.value.trim()); };
     input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
     input.addEventListener('blur', commit);
     ov.appendChild(input);
-    ov.appendChild(actionBtn('neutral', 'Обзор…', async () => {
-      const path = await BrowseFile(`Выберите исполняемый файл ${c.name}`).catch(() => '');
+    ov.appendChild(actionBtn('neutral', t('ui.browse'), async () => {
+      const path = await BrowseFile(t('js.comp.pick_exec', c.name)).catch(() => '');
       if (path) setComponentOverride(c.name, path);
     }));
-    if (c.override) ov.appendChild(actionBtn('neutral', 'Сбросить', () => setComponentOverride(c.name, '')));
+    if (c.override) ov.appendChild(actionBtn('neutral', t('js.comp.reset'), () => setComponentOverride(c.name, '')));
     row.appendChild(ov);
-    if (c.overrideError) row.appendChild(el('div', 'component-line error', `Свой путь не работает: ${c.overrideError}`));
+    if (c.overrideError) row.appendChild(el('div', 'component-line error', t('js.comp.override_broken', c.overrideError)));
 
     const err = state.componentErrors[c.name];
     if (err) row.appendChild(el('div', 'component-line error', err));
@@ -551,10 +579,10 @@ function fillForm(p) {
     $('#f-password').value = pw;
   }
   $('#f-password').type = state.showPassword ? 'text' : 'password';
-  $('#togglePassword').textContent = state.showPassword ? 'Скрыть' : 'Показать';
+  $('#togglePassword').textContent = state.showPassword ? t('js.hide') : t('ui.show');
 
   const gp = p.type === 'globalprotect';
-  $('#f-host-label').textContent = gp ? 'Адрес портала' : 'Адрес сервера (host)';
+  $('#f-host-label').textContent = gp ? t('js.f.portal') : t('js.f.host');
   // SAML logs in through the IdP's page, there's no password to store.
   $('#f-password-field').hidden = gp && getSetting(p, 'globalprotect.auth') === 'saml';
   document.querySelectorAll('[data-for]').forEach(n => {
@@ -580,7 +608,7 @@ function fillLog(snap) {
   const panel = $('#logPanel');
   panel.innerHTML = '';
   const lines = snap.logLines || [];
-  if (lines.length === 0) { panel.appendChild(el('div', 'empty', 'Журнал пуст — выполните подключение.')); return; }
+  if (lines.length === 0) { panel.appendChild(el('div', 'empty', t('js.log.empty'))); return; }
   lines.forEach(line => {
     const row = document.createElement('div');
     const ts = document.createElement('span');
@@ -628,7 +656,7 @@ $('#dotMaximise').onclick = () => WindowToggleFullscreen();
 document.querySelectorAll('.tab[data-tab]').forEach(t => t.onclick = () => { state.activeTab = t.dataset.tab; render(); });
 document.querySelectorAll('[data-browse]').forEach(b => b.onclick = async () => {
   const sp = selected(); if (!sp) return;
-  const path = await BrowseFile('Выберите файл').catch(() => '');
+  const path = await BrowseFile(t('js.pick_file')).catch(() => '');
   if (!path) return;
   setSetting(sp, b.dataset.browse, path);
   scheduleSave(sp);
@@ -680,7 +708,7 @@ $('#logoPickBtn').onclick = async () => {
   try {
     const updated = await PickProfileLogo(sp.id);
     if (updated.logo) { state.logos = await GetProfileLogos(); replaceProfile(updated); }
-  } catch (e) { alert('Не удалось загрузить логотип: ' + e); }
+  } catch (e) { alert(t('js.err.logo', errText(e))); }
   render();
 };
 $('#logoRemoveBtn').onclick = async () => {
@@ -699,13 +727,20 @@ $('#deleteConfirmBtn').onclick = async () => {
 // ---- about ----
 function showAbout() {
   if (state.appInfo) {
-    $('#aboutVersion').textContent = `Версия ${state.appInfo.version}`;
-    $('#aboutAuthor').textContent = `Автор: ${state.appInfo.author}`;
+    $('#aboutVersion').textContent = t('js.about.version', state.appInfo.version);
+    $('#aboutAuthor').textContent = t('js.about.author', state.appInfo.author);
     $('#aboutGithub').textContent = state.appInfo.githubUrl;
   }
   $('#aboutOverlay').hidden = false;
 }
 $('#aboutTrigger').onclick = showAbout;
+$('#langSelect').onchange = async (e) => {
+  try {
+    setI18n(await SetLanguage(e.target.value));
+    showAbout(); // its dynamic lines are built with t()
+    render();
+  } catch (err) { alert(errText(err)); }
+};
 $('#aboutCloseBtn').onclick = () => { $('#aboutOverlay').hidden = true; };
 $('#aboutGithub').onclick = () => {
   if (state.appInfo && state.appInfo.githubUrl) BrowserOpenURL(state.appInfo.githubUrl);
@@ -756,7 +791,7 @@ EventsOn('connect:error', ({ profileId, message }) => {
     state.showSettings = false;
   }
   render();
-  setTimeout(() => alert('Не удалось подключиться: ' + message), 0);
+  setTimeout(() => alert(t('js.err.connect', message)), 0);
 });
 // Fired by Manager.finish (vpn_manager.go) right when a connection attempt
 // fails — jumps to the profile that failed so its overview + error banner
@@ -772,9 +807,10 @@ EventsOn('profile:failed', (profileId) => {
 
 // ---- startup ----
 async function init() {
-  const [profiles, selectedId, theme, components, appInfo, logos] = await Promise.all([
-    GetProfiles(), GetSelectedProfileID(), GetTheme(), GetComponents(), GetAppInfo(), GetProfileLogos(),
+  const [profiles, selectedId, theme, components, appInfo, logos, bundle] = await Promise.all([
+    GetProfiles(), GetSelectedProfileID(), GetTheme(), GetComponents(), GetAppInfo(), GetProfileLogos(), GetI18n(),
   ]);
+  setI18n(bundle);
   state.logos = logos || {};
   state.profiles = profiles;
   state.selectedProfileId = selectedId || (profiles[0] && profiles[0].id);

@@ -42,7 +42,7 @@ type errUntrustedServerCert struct {
 }
 
 func (e *errUntrustedServerCert) Error() string {
-	return fmt.Sprintf("сертификат сервера не прошёл проверку: %v", e.Cause)
+	return T("cert.server_unverified", e.Cause)
 }
 
 // certPin is openconnect's --servercert format: base64 SHA-256 of the
@@ -75,14 +75,14 @@ func gpTLSConfig(gp *GlobalProtectSettings) (*tls.Config, error) {
 	if gp.CaFile != "" {
 		pem, err := os.ReadFile(gp.CaFile)
 		if err != nil {
-			return nil, fmt.Errorf("CA-сертификат: %w", err)
+			return nil, fmt.Errorf("%s: %w", T("cert.ca"), err)
 		}
 		pool, err := x509.SystemCertPool()
 		if err != nil || pool == nil {
 			pool = x509.NewCertPool()
 		}
 		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("CA-сертификат %s не содержит PEM-сертификатов", gp.CaFile)
+			return nil, errors.New(T("cert.ca_no_pem", gp.CaFile))
 		}
 		cfg.RootCAs = pool
 	}
@@ -106,7 +106,7 @@ func gpTLSConfig(gp *GlobalProtectSettings) (*tls.Config, error) {
 				return err
 			}
 			if got := certPin(leaf); got != pin {
-				return fmt.Errorf("сертификат сервера не совпадает с сохранённым (%s)", got)
+				return errors.New(T("cert.pin_mismatch", got))
 			}
 			return nil
 		}
@@ -171,7 +171,7 @@ func gpPrelogin(ctx context.Context, p Profile) (gpPreloginInfo, error) {
 				return gpPreloginInfo{}, &errUntrustedServerCert{Pin: pin, Cause: err}
 			}
 		}
-		return gpPreloginInfo{}, fmt.Errorf("запрос prelogin: %w", err)
+		return gpPreloginInfo{}, fmt.Errorf("%s: %w", T("gp.err.prelogin_request"), err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -179,7 +179,7 @@ func gpPrelogin(ctx context.Context, p Profile) (gpPreloginInfo, error) {
 		return gpPreloginInfo{}, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return gpPreloginInfo{}, fmt.Errorf("prelogin: сервер ответил %s", resp.Status)
+		return gpPreloginInfo{}, errors.New(T("gp.err.prelogin_status", resp.Status))
 	}
 	return parseGPPrelogin(data)
 }
@@ -193,7 +193,7 @@ func parseGPPrelogin(data []byte) (gpPreloginInfo, error) {
 		SAMLRequest string   `xml:"saml-request"`
 	}
 	if err := xml.Unmarshal(data, &r); err != nil {
-		return gpPreloginInfo{}, fmt.Errorf("ответ prelogin не похож на GlobalProtect: %w", err)
+		return gpPreloginInfo{}, fmt.Errorf("%s: %w", T("gp.err.not_gp"), err)
 	}
 	if !strings.EqualFold(strings.TrimSpace(r.Status), "Success") {
 		msg := strings.TrimSpace(r.Msg)

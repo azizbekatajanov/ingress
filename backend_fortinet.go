@@ -73,7 +73,7 @@ func (fortinetBackend) SaveServerCert(p *Profile, cert string) string {
 		return ""
 	}
 	p.Fortinet.TrustedCert = cert
-	return "Сертификат шлюза сохранён как доверенный (trusted-cert) — нажмите «Подключить» ещё раз"
+	return T("cert.trustedcert_saved")
 }
 
 // openfortivpn never asks to choose between options.

@@ -52,10 +52,10 @@ func (*ciscoBackend) Prepare(p Profile, auth authInput, toolPath string) (backen
 		return backendLaunch{}, fmt.Errorf("profile %s has no Cisco settings", p.ID)
 	}
 	if p.Username == "" {
-		return backendLaunch{}, errors.New("не указано имя пользователя")
+		return backendLaunch{}, errors.New(T("err.no_username"))
 	}
 	if auth.Password == "" {
-		return backendLaunch{}, errors.New("не указан пароль")
+		return backendLaunch{}, errors.New(T("err.no_password"))
 	}
 
 	args := []string{"--protocol=anyconnect", "--user=" + p.Username, "--passwd-on-stdin"}
@@ -92,10 +92,10 @@ func (b *ciscoBackend) Parse(line string, prompt bool) []lineEvent {
 		return evs
 	}
 	if ciscoCSDRe.MatchString(trimmed) {
-		return []lineEvent{{Kind: evFatal, Value: "сервер требует проверку компьютера (Cisco hostscan/CSD), а Ingress её пока не поддерживает"}}
+		return []lineEvent{{Kind: evFatal, Value: T("cisco.err.csd")}}
 	}
 	if ciscoSSORe.MatchString(trimmed) {
-		return []lineEvent{{Kind: evFatal, Value: "сервер требует вход через SSO (SAML), а для Cisco Ingress его пока не поддерживает — выберите на сервере группу с входом по паролю"}}
+		return []lineEvent{{Kind: evFatal, Value: T("cisco.err.sso")}}
 	}
 
 	if prompt {
@@ -107,10 +107,10 @@ func (b *ciscoBackend) Parse(line string, prompt bool) []lineEvent {
 		if rejected != "" {
 			// The form came back with an error: wrong password, or a wrong
 			// second factor on servers that re-ask instead of failing.
-			return []lineEvent{{Kind: evFatal, Value: "сервер отклонил данные входа (" + rejected + ")"}}
+			return []lineEvent{{Kind: evFatal, Value: T("cisco.err.rejected", rejected)}}
 		}
 		if ocUsernameRe.MatchString(trimmed) {
-			return []lineEvent{{Kind: evFatal, Value: "сервер запросил имя пользователя — проверьте его в настройках профиля"}}
+			return []lineEvent{{Kind: evFatal, Value: T("err.username_asked")}}
 		}
 		if strings.HasSuffix(trimmed, ":") {
 			// The password went in via --passwd-on-stdin; a further field
@@ -121,7 +121,7 @@ func (b *ciscoBackend) Parse(line string, prompt bool) []lineEvent {
 	}
 
 	if strings.Contains(trimmed, "HTTP/1.1 401") {
-		return []lineEvent{{Kind: evError, Value: "сервер отклонил данные входа (401) — неверный пароль или код"}}
+		return []lineEvent{{Kind: evError, Value: T("cisco.err.401")}}
 	}
 	if ciscoRejectRe.MatchString(trimmed) {
 		b.rejected = trimmed
@@ -142,7 +142,7 @@ func (*ciscoBackend) SaveServerCert(p *Profile, cert string) string {
 		return ""
 	}
 	p.Cisco.ServerCert = cert
-	return "Сертификат сервера сохранён как доверенный (servercert) — нажмите «Подключить» ещё раз"
+	return T("cert.servercert_saved")
 }
 
 // RememberChoice keeps the picked group for --authgroup next time. The
