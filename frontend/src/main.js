@@ -263,7 +263,9 @@ function render() {
   let tabsDef = [];
   if (isConnected) tabsDef = ['status', 'log'];
   else if (state.showSettings) tabsDef = ['general', 'certificate', 'advanced'];
-  const showPastLog = sp && snap.status === 'disconnected' && state.showLog && !state.showSettings;
+  // The log of a failed attempt, or of one still in progress (otherwise the
+  // spinner hides everything the client prints).
+  const showPastLog = sp && (snap.status === 'disconnected' || snap.status === 'connecting') && state.showLog && !state.showSettings;
   tabsRow.hidden = tabsDef.length === 0 && !showPastLog;
   backBtn.hidden = !((state.showSettings || showPastLog) && !isConnected);
   if (!tabsDef.includes(state.activeTab)) state.activeTab = tabsDef[0];
@@ -275,7 +277,7 @@ function render() {
 
   // content views
   const showOverview = sp && snap.status === 'disconnected' && !state.showSettings && !showPastLog;
-  const showConnecting = sp && snap.status === 'connecting';
+  const showConnecting = sp && snap.status === 'connecting' && !showPastLog;
   $('#viewOverview').hidden = !showOverview;
   $('#viewConnecting').hidden = !showConnecting;
   $('#viewGeneral').hidden = !(sp && !isConnected && state.showSettings && state.activeTab === 'general');
@@ -686,6 +688,7 @@ $('#addProfile').onclick = addProfile;
 $('#themeToggle').onclick = () => { state.theme = state.theme === 'light' ? 'dark' : 'light'; SetTheme(state.theme).catch(() => {}); render(); };
 $('#gearBtn').onclick = () => { state.showSettings = !state.showSettings; render(); };
 $('#backToOverview').onclick = () => { state.showSettings = false; state.showLog = false; render(); };
+$('#showConnectLogBtn').onclick = () => { state.showLog = true; render(); };
 $('#copyLogBtn').onclick = () => { const sp = selected(); if (sp) copyLog(snapshotOf(sp.id)); };
 $('#cancelConnectBtn').onclick = () => { const sp = selected(); if (sp) cancelConnect(sp.id); };
 $('#togglePassword').onclick = () => { state.showPassword = !state.showPassword; render(); };

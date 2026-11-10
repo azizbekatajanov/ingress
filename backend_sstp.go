@@ -42,6 +42,8 @@ var sstpForbiddenPppdOptions = map[string]bool{
 var (
 	// "Nov 10 14:11:25 sstpc[507]: message " → "message"
 	sstpLogPrefixRe = regexp.MustCompile(`^\w{3}\s+\d+\s+[\d:]+\s+sstpc\[\d+\]:\s*`)
+	// macOS pppd with logfd: "Tue Nov 10 15:13:55 2026 : message"
+	pppdTimePrefixRe = regexp.MustCompile(`^\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4}\s+:\s*`)
 	// sstp_die: "**Error: <msg>, (-1)"
 	sstpDieRe        = regexp.MustCompile(`^\*\*Error:\s*(.+?),?\s*\(-?\d+\)\s*$`)
 	sstpLocalIPRe    = regexp.MustCompile(`(?i)^local\s+IP\s+address\s+([0-9.]+)`)
@@ -142,7 +144,9 @@ func sstpPppdOptions(raw string) ([]string, error) {
 }
 
 func (sstpBackend) Parse(line string, _ bool) []lineEvent {
-	msg := strings.TrimSpace(sstpLogPrefixRe.ReplaceAllString(strings.TrimSpace(line), ""))
+	msg := strings.TrimSpace(line)
+	msg = sstpLogPrefixRe.ReplaceAllString(msg, "")
+	msg = strings.TrimSpace(pppdTimePrefixRe.ReplaceAllString(msg, ""))
 	if msg == "" {
 		return nil
 	}

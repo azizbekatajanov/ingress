@@ -161,3 +161,31 @@ func TestTakeWrapperOpts(t *testing.T) {
 		t.Errorf("options after the tool must be left alone: %q %q", rest, routes)
 	}
 }
+
+// Real output: the installed sstpc as root against an SSTP server (fake
+// credentials), via design/sstp-diag.sh. macOS pppd prefixes its lines
+// with a date when logging to a descriptor.
+func TestSSTPParseMacOSPppd(t *testing.T) {
+	b := sstpBackend{}
+	cases := map[string][]lineEvent{
+		"Nov 10 15:13:55 sstpc[93642]: Started PPP Link Negotiation":                         nil,
+		"Tue Nov 10 15:13:55 2026 : publish_entry SCDSet() failed: Success!":                 nil,
+		"Tue Nov 10 15:13:55 2026 : Using interface ppp0":                                    nil,
+		"Tue Nov 10 15:13:55 2026 : MS-CHAP authentication failed: bad username or password": {{Kind: evError, Sticky: true, Value: T("sstp.err.auth")}},
+		"Tue Nov 10 15:14:02 2026 : local  IP address 192.168.88.10":                         {{Kind: evAssignedIP, Value: "192.168.88.10"}},
+		"Nov 10 15:13:55 sstpc[93642]: Server certificated failed verification, ignoring":    nil,
+		"**Error: Connection was aborted, Reason was not known, (-1)":                        {{Kind: evError, Value: "Connection was aborted, Reason was not known"}},
+	}
+	for line, want := range cases {
+		if got := b.Parse(line, false); !reflect.DeepEqual(got, want) {
+			t.Errorf("Parse(%q) = %+v, want %+v", line, got, want)
+		}
+	}
+	// The route watcher sees the same prefixed lines.
+	var added []string
+	w := &routeWatcher{out: &bytes.Buffer{}, targets: routeTargets("172.16.10.0/24"), add: func(c, i string) error { added = append(added, c+"@"+i); return nil }}
+	w.Write([]byte("Tue Nov 10 15:13:55 2026 : Using interface ppp0\r\nTue Nov 10 15:14:02 2026 : remote IP address 192.168.88.1\r\n"))
+	if !reflect.DeepEqual(added, []string{"172.16.10.0/24@ppp0"}) {
+		t.Errorf("routes: %v", added)
+	}
+}
