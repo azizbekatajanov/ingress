@@ -87,6 +87,10 @@ On Linux, elevation is via `pkexec`, which shows your desktop's native polkit au
 | Linux   | Implemented via `pkexec` (amd64). SAML window: WebKitGTK. |
 | Windows | UI is there, but privilege elevation with live stdio (needed for log streaming and the interactive OTP prompt) isn't implemented yet — `Connect` returns an error. |
 
+## Security
+
+What runs as root, which hosts Ingress connects to (no telemetry), where passwords are kept, how downloads and updates are verified, and how Ingress differs from the vendors' own clients: [docs/security.md](docs/security.md) (по-русски: [docs/security.ru.md](docs/security.ru.md)). To report a vulnerability, see [SECURITY.md](SECURITY.md).
+
 ## Requirements (development)
 
 - Go 1.25+
@@ -139,3 +143,7 @@ Nothing user-specific lives in this repository. At runtime, Ingress stores:
 ## Licenses of bundled components
 
 The VPN clients Ingress downloads are separate programs under their own licenses: openconnect (LGPL-2.1), openfortivpn (GPL-3.0 with OpenSSL exception), vpnc-scripts (GPL-2.0), OpenSSL (Apache-2.0). Each installed component carries its `LICENSES/` folder and a `SOURCES.txt` naming the exact sources and patches. The build scripts are in [ingress-deps](https://github.com/azizbekatajanov/ingress-deps).
+
+## License
+
+Ingress is licensed under the [Apache License 2.0](LICENSE).
