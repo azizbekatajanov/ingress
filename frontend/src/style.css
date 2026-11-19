@@ -62,6 +62,7 @@ body.theme-dark {
 .dot.red { background: #ff5f57; } .dot.yellow { background: #febc2e; } .dot.green { background: #28c840; }
 .sidebar-heading { padding: 16px 16px 6px; font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--text-faint); }
 .sidebar-heading-row { display: flex; align-items: center; justify-content: space-between; padding-right: 10px; }
+.heading-btns { display: flex; gap: 2px; }
 .hosts-toggle { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-top: 10px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-faint); cursor: pointer; --wails-draggable: no-drag; }
 .hosts-toggle:hover { background: var(--divider); color: var(--text-dim); }
 .hosts-toggle.on { color: var(--accent); }
@@ -242,3 +243,15 @@ body.theme-dark .component-line.warning { color: #ff9f0a; }
 .choose-option { border: 1px solid var(--divider); border-radius: 10px; padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; }
 .choose-option:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 
+
+.transfer-modal #transferMain, .transfer-modal #transferPreview { display: flex; flex-direction: column; gap: 12px; }
+.transfer-modal [hidden] { display: none !important; }
+.transfer-list { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; }
+.transfer-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 12px; border: 1px solid var(--divider); border-radius: 10px; cursor: pointer; }
+.transfer-item input { margin-top: 2px; accent-color: var(--accent); cursor: pointer; }
+.transfer-item .ti-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.transfer-item .ti-name { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transfer-item .ti-meta { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transfer-item .ti-note { font-size: 11px; color: #b8650a; }
+body.theme-dark .transfer-item .ti-note { color: #ff9f0a; }
+.transfer-modal .otp-title, .transfer-modal .otp-sub { text-align: left; }

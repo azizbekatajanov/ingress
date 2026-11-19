@@ -1,6 +1,7 @@
 import {
   GetProfiles, GetSelectedProfileID, SelectProfile, AddProfile, UpdateProfile, RemoveProfile,
   GetPassword, SetPassword, GetTheme, SetTheme, GetShowHosts, SetShowHosts,
+  ExportProfiles, PickImportFile, ImportProfiles, CancelImport,
   Connect, Disconnect, CancelConnect, SubmitOtp, SubmitPrompt, GetSnapshot,
   GetComponents, InstallComponent, RemoveComponent, SetComponentOverride, BrowseFile,
   PickProfileLogo, RemoveProfileLogo, GetProfileLogos,
@@ -586,6 +587,102 @@ function renderInstallBanner(p) {
   }
   if (err) host.appendChild(el('div', 'banner error', err));
 }
+
+// ---- profile import/export ----
+const transfer = { exportIds: null, preview: null, importIdx: new Set() };
+
+function transferItem(checked, name, meta, notes, onToggle) {
+  const row = document.createElement('label');
+  row.className = 'transfer-item';
+  const box = document.createElement('input');
+  box.type = 'checkbox'; box.checked = checked;
+  box.onchange = () => onToggle(box.checked);
+  const body = el('div', 'ti-body');
+  body.appendChild(el('div', 'ti-name', name));
+  body.appendChild(el('div', 'ti-meta', meta));
+  notes.forEach(n => body.appendChild(el('div', 'ti-note', n)));
+  row.appendChild(box); row.appendChild(body);
+  return row;
+}
+
+function renderTransfer() {
+  const pv = transfer.preview;
+  $('#transferMain').hidden = !!pv;
+  $('#transferPreview').hidden = !pv;
+  if (!pv) {
+    if (!transfer.exportIds) transfer.exportIds = new Set(state.profiles.map(p => p.id));
+    const list = $('#exportList'); list.innerHTML = '';
+    state.profiles.forEach(p => list.appendChild(transferItem(transfer.exportIds.has(p.id), p.name, hostLine(p), [], on => {
+      on ? transfer.exportIds.add(p.id) : transfer.exportIds.delete(p.id); renderTransfer();
+    })));
+    $('#exportBtn').style.opacity = transfer.exportIds.size ? 1 : 0.5;
+    return;
+  }
+  $('#importTitle').textContent = t('js.xfer.import_from', pv.path);
+  const list = $('#importList'); list.innerHTML = '';
+  pv.items.forEach((it, i) => {
+    const notes = [];
+    if (it.duplicate) notes.push(t('js.xfer.duplicate', it.duplicate));
+    if (it.insecure) notes.push(t('js.xfer.insecure'));
+    const meta = hostLine(it) + (it.username ? ' · ' + it.username : '');
+    list.appendChild(transferItem(transfer.importIdx.has(i), it.name, meta, notes, on => {
+      on ? transfer.importIdx.add(i) : transfer.importIdx.delete(i); renderTransfer();
+    }));
+  });
+  const n = transfer.importIdx.size;
+  $('#importConfirmBtn').textContent = t('js.xfer.import_n', n);
+  $('#importConfirmBtn').style.opacity = n ? 1 : 0.5;
+}
+
+function showTransfer() {
+  transfer.exportIds = null; transfer.preview = null;
+  $('#exportResult').hidden = true; $('#transferError').hidden = true;
+  $('#transferOverlay').hidden = false;
+  renderTransfer();
+}
+function transferError(e) {
+  $('#transferError').textContent = errText(e);
+  $('#transferError').hidden = false;
+}
+
+$('#transferTrigger').onclick = showTransfer;
+$('#transferCloseBtn').onclick = () => { $('#transferOverlay').hidden = true; };
+$('#exportBtn').onclick = async () => {
+  if (!transfer.exportIds.size) return;
+  $('#transferError').hidden = true;
+  try {
+    const ids = state.profiles.filter(p => transfer.exportIds.has(p.id)).map(p => p.id);
+    const path = await ExportProfiles(ids);
+    if (path) { $('#exportResult').textContent = t('js.xfer.saved', path); $('#exportResult').hidden = false; }
+  } catch (e) { transferError(e); }
+};
+$('#importPickBtn').onclick = async () => {
+  $('#transferError').hidden = true;
+  try {
+    const pv = await PickImportFile();
+    if (!pv) return;
+    transfer.preview = pv;
+    transfer.importIdx = new Set(pv.items.map((it, i) => it.duplicate ? -1 : i).filter(i => i >= 0));
+    renderTransfer();
+  } catch (e) { transferError(e); }
+};
+$('#importCancelBtn').onclick = () => { CancelImport().catch(() => {}); transfer.preview = null; renderTransfer(); };
+$('#importConfirmBtn').onclick = async () => {
+  if (!transfer.importIdx.size) return;
+  try {
+    const added = await ImportProfiles([...transfer.importIdx].sort((a, b) => a - b));
+    state.profiles = await GetProfiles();
+    await Promise.all((added || []).map(p => GetSnapshot(p.id).then(s => { state.snapshots[p.id] = s; })));
+    if (added && added.length) {
+      // Straight to the first one's settings: its password is still to enter.
+      state.selectedProfileId = added[0].id;
+      state.showSettings = true; state.showLog = false; state.activeTab = 'general';
+    }
+    transfer.preview = null;
+    $('#transferOverlay').hidden = true;
+    render();
+  } catch (e) { transfer.preview = null; renderTransfer(); transferError(e); }
+};
 
 // ---- Компоненты screen ----
 function showComponents() {

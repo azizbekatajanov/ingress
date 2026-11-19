@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"sync"
 	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -19,6 +20,10 @@ type App struct {
 	tray          *Tray
 	updater       *Updater
 	quitConfirmed bool
+	// pendingImport: profiles read by PickImportFile, waiting for the user
+	// to confirm in the preview (ImportProfiles).
+	importMu      sync.Mutex
+	pendingImport []Profile
 }
 
 func NewApp() *App {

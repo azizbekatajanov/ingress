@@ -17,7 +17,10 @@
       </div>
       <div class="sidebar-heading-row">
         <div class="sidebar-heading" data-i18n="ui.profiles">Профили</div>
-        <button class="hosts-toggle" id="hostsToggle" type="button" aria-pressed="false"></button>
+        <div class="heading-btns">
+          <button class="hosts-toggle" id="transferTrigger" type="button" data-i18n-title="ui.xfer.title" title="Импорт и экспорт профилей"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v14M3 14l4 4 4-4"/><path d="M17 20V6M13 10l4-4 4 4"/></svg></button>
+          <button class="hosts-toggle" id="hostsToggle" type="button" aria-pressed="false"></button>
+        </div>
       </div>
       <div class="profile-list" id="profileList"></div>
       <div class="sidebar-add" id="addProfile">
@@ -403,6 +406,38 @@
         </div>
         <div class="otp-actions">
           <div class="btn neutral" id="typeCancelBtn" data-i18n="ui.cancel">Отмена</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="otp-overlay" id="transferOverlay" hidden>
+      <div class="otp-modal components-modal transfer-modal">
+        <div id="transferMain">
+          <div class="otp-title" data-i18n="ui.xfer.title">Импорт и экспорт профилей</div>
+          <div class="otp-sub" data-i18n="ui.xfer.sub">В файл попадают настройки подключения. Пароли и файлы сертификатов и ключей не переносятся.</div>
+          <div class="component-label" data-i18n="ui.xfer.export">Экспорт</div>
+          <div class="transfer-list" id="exportList"></div>
+          <div class="component-actions">
+            <div class="btn neutral" id="exportBtn" data-i18n="ui.xfer.export_btn">Сохранить в файл…</div>
+          </div>
+          <div class="component-line" id="exportResult" hidden></div>
+          <div class="component-label" data-i18n="ui.xfer.import">Импорт</div>
+          <div class="component-actions">
+            <div class="btn neutral" id="importPickBtn" data-i18n="ui.xfer.import_btn">Выбрать файл .ingress…</div>
+          </div>
+          <div class="component-line error" id="transferError" hidden></div>
+          <div class="otp-actions">
+            <div class="btn primary" id="transferCloseBtn" data-i18n="ui.done">Готово</div>
+          </div>
+        </div>
+        <div id="transferPreview" hidden>
+          <div class="otp-title" id="importTitle"></div>
+          <div class="otp-sub" data-i18n="ui.xfer.import_note">Пароли не переносятся — введите их в настройках профиля после импорта.</div>
+          <div class="transfer-list" id="importList"></div>
+          <div class="otp-actions">
+            <div class="btn neutral" id="importCancelBtn" data-i18n="ui.cancel">Отмена</div>
+            <div class="btn primary" id="importConfirmBtn"></div>
+          </div>
         </div>
       </div>
     </div>
