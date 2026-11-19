@@ -41,6 +41,9 @@ const (
 	// ConnectionSnapshot.PromptOptions (e.g. a GlobalProtect gateway).
 	StatusChoose    Status = "choose"
 	StatusConnected Status = "connected"
+	// StatusReconnecting: the tunnel dropped and the next auto-reconnect
+	// attempt is pending (see reconnect.go). Only ever in snapshots.
+	StatusReconnecting Status = "reconnecting"
 )
 
 type LogLine struct {
@@ -70,6 +73,12 @@ type ConnectionSnapshot struct {
 	PromptLabel   string   `json:"promptLabel"`
 	PromptOptions []string `json:"promptOptions"`
 	PromptMessage string   `json:"promptMessage"`
+	// Auto-reconnect (see reconnect.go). ReconnectAttempt is the attempt
+	// running or (while reconnecting) the next one; 0 = not reconnecting.
+	ReconnectAttempt     int  `json:"reconnectAttempt"`
+	ReconnectMax         int  `json:"reconnectMax"`
+	ReconnectSecondsLeft int  `json:"reconnectSecondsLeft"`
+	ReconnectOffline     bool `json:"reconnectOffline"`
 }
 
 const otpWindow = 60 * time.Second
@@ -117,7 +126,13 @@ type liveConnection struct {
 	cancelPreAuth context.CancelFunc
 	// failed: the backend reported a fatal condition and Manager stopped the
 	// client itself — unlike a user cancel, the failure must still surface.
-	failed        bool
+	failed bool
+	// rejected: the server refused the login or the backend reported a
+	// condition a retry can't fix — no auto-reconnect.
+	rejected bool
+	// everConnected: the tunnel came up at some point (a drop after that is
+	// what auto-reconnect is for).
+	everConnected bool
 	promptLabel   string
 	promptOptions []string
 	promptMessage string
@@ -150,6 +165,13 @@ type Manager struct {
 	store      *ProfileStore
 	components *ComponentManager
 	onUpdate   func(ConnectionSnapshot)
+	// Auto-reconnect (reconnect.go). reconnects is guarded by mu; the rest
+	// are test hooks (nil = the real thing).
+	reconnects      map[string]*reconnectState
+	reconnectDelays []time.Duration
+	dial            func(profileID string) error
+	online          func(Profile) bool
+	notify          func(title, body string)
 }
 
 func NewManager(ctx context.Context, store *ProfileStore, components *ComponentManager) *Manager {
@@ -161,8 +183,10 @@ func NewManager(ctx context.Context, store *ProfileStore, components *ComponentM
 			wailsRuntime.WindowUnminimise(ctx)
 		},
 		conns:      make(map[string]*liveConnection),
+		reconnects: make(map[string]*reconnectState),
 		store:      store,
 		components: components,
+		notify:     systemNotify,
 	}
 }
 
@@ -179,13 +203,14 @@ func (m *Manager) get(profileID string) *liveConnection {
 }
 
 func (m *Manager) Snapshot(profileID string) ConnectionSnapshot {
-	conn := m.get(profileID)
-	if conn == nil {
-		return ConnectionSnapshot{ProfileID: profileID, Status: StatusDisconnected}
+	snap := ConnectionSnapshot{ProfileID: profileID, Status: StatusDisconnected}
+	if conn := m.get(profileID); conn != nil {
+		conn.mu.Lock()
+		snap = conn.snapshotLocked()
+		conn.mu.Unlock()
 	}
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
-	return conn.snapshotLocked()
+	m.decorateReconnect(&snap)
+	return snap
 }
 
 func (c *liveConnection) snapshotLocked() ConnectionSnapshot {
@@ -223,6 +248,7 @@ func (m *Manager) emit(conn *liveConnection) {
 	conn.mu.Lock()
 	snap := conn.snapshotLocked()
 	conn.mu.Unlock()
+	m.decorateReconnect(&snap)
 	m.events("vpn:update", snap)
 	if m.onUpdate != nil {
 		m.onUpdate(snap)
@@ -248,6 +274,13 @@ func (c *liveConnection) addLog(text string) {
 // profile in "connecting", and anything that goes wrong later is reported
 // through the snapshot's LastError like any other failed attempt.
 func (m *Manager) Connect(profileID string) error {
+	// A manual connect replaces a pending auto-reconnect.
+	m.stopReconnect(profileID)
+	return m.connect(profileID)
+}
+
+// connect is Connect without touching auto-reconnect (which uses it).
+func (m *Manager) connect(profileID string) error {
 	if existing := m.get(profileID); existing != nil {
 		existing.mu.Lock()
 		st := existing.status
@@ -415,7 +448,7 @@ func (m *Manager) abortPending(conn *liveConnection, err error) {
 			}
 		}
 		conn.mu.Lock()
-		conn.lastError, conn.failed = msg, true
+		conn.lastError, conn.failed, conn.rejected = msg, true, true
 		conn.mu.Unlock()
 		conn.addLog(T("log.error", err.Error()))
 	default:
@@ -425,6 +458,12 @@ func (m *Manager) abortPending(conn *liveConnection, err error) {
 		conn.addLog(T("log.error", err.Error()))
 	}
 	m.finish(conn)
+}
+
+func (c *liveConnection) isDisconnected() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.status == StatusDisconnected
 }
 
 func (c *liveConnection) isCancelling() bool {
@@ -611,6 +650,9 @@ func (m *Manager) handleLine(conn *liveConnection, line string, prompt bool) {
 				conn.addLog(T("log.choice_needed", ev.Label))
 			}
 			m.emit(conn)
+			if ev.Prompt != PromptChoice && m.reconnectFor(conn.profileID) != nil {
+				m.notifyProfile(conn.profileID, "notify.code_needed")
+			}
 			// A connect started from the tray has no window on screen, and
 			// the client is now blocked until the user answers.
 			if m.showWindow != nil {
@@ -650,8 +692,10 @@ func (m *Manager) handleLine(conn *liveConnection, line string, prompt bool) {
 		// mustn't resurface later as the reason for a disconnect.
 		conn.lastError = ""
 		conn.errorSticky = false
+		conn.everConnected = true
 		conn.mu.Unlock()
 		conn.addLog(T("log.tunnel_up"))
+		m.reconnectSucceeded(conn)
 	}
 	m.emit(conn)
 }
@@ -663,6 +707,7 @@ func (m *Manager) fail(conn *liveConnection, reason string) {
 	conn.lastError = reason
 	conn.errorSticky = true
 	conn.failed = true
+	conn.rejected = true
 	conn.mu.Unlock()
 	conn.addLog(T("log.error", reason))
 	m.emit(conn)
@@ -732,7 +777,7 @@ func (m *Manager) finish(conn *liveConnection) {
 	conn.mu.Lock()
 	alreadyDisconnected := conn.status == StatusDisconnected
 	conn.status = StatusDisconnected
-	lastError := conn.lastError
+	everConnected := conn.everConnected
 	cancelling := conn.cancelling && !conn.failed
 	conn.mu.Unlock()
 	if !alreadyDisconnected {
@@ -741,7 +786,20 @@ func (m *Manager) finish(conn *liveConnection) {
 	if conn.cleanup != nil {
 		conn.cleanup()
 	}
+	_, exists := m.store.Get(conn.profileID)
+	reconnecting := false
+	if cancelling || !exists {
+		m.stopReconnect(conn.profileID)
+	} else {
+		reconnecting = m.continueReconnect(conn, everConnected)
+	}
+	conn.mu.Lock()
+	lastError := conn.lastError
+	conn.mu.Unlock()
 	m.emit(conn)
+	if reconnecting {
+		return
+	}
 
 	// A failed connection attempt is otherwise invisible whenever the window
 	// is hidden — easy to end up in, since profile rows are clickable right
@@ -754,7 +812,7 @@ func (m *Manager) finish(conn *liveConnection) {
 	// set anyway, but this keeps the intent explicit).
 	// A profile deleted mid-attempt must not be re-selected: that would
 	// persist a dangling selectedProfileId and blank the UI.
-	if _, exists := m.store.Get(conn.profileID); exists && lastError != "" && !cancelling {
+	if exists && lastError != "" && !cancelling {
 		m.store.SetSelectedID(conn.profileID)
 		m.events("profile:failed", conn.profileID)
 		if m.showWindow != nil {
@@ -853,8 +911,12 @@ func (m *Manager) CancelConnect(profileID string) error {
 }
 
 func (m *Manager) Disconnect(profileID string) error {
+	if m.stopReconnect(profileID) {
+		m.addLogTo(profileID, T("log.reconnect_stopped"))
+		m.emitProfile(profileID)
+	}
 	conn := m.get(profileID)
-	if conn != nil {
+	if conn != nil && !conn.isDisconnected() {
 		conn.addLog(T("log.stopping"))
 		m.emit(conn)
 	}
@@ -862,8 +924,14 @@ func (m *Manager) Disconnect(profileID string) error {
 }
 
 func (m *Manager) terminate(profileID string) error {
+	if m.stopReconnect(profileID) {
+		m.addLogTo(profileID, T("log.reconnect_stopped"))
+		m.emitProfile(profileID)
+	}
 	conn := m.get(profileID)
-	if conn == nil {
+	if conn == nil || conn.isDisconnected() {
+		// Nothing running — notably a tunnel waiting to reconnect, whose
+		// old process is gone (its pid may already belong to another one).
 		return nil
 	}
 	conn.mu.Lock()
@@ -894,6 +962,11 @@ func (m *Manager) DisconnectAll(timeout time.Duration) {
 				ids = append(ids, id)
 			}
 			c.mu.Unlock()
+		}
+		for id := range m.reconnects {
+			if m.conns[id] == nil || m.conns[id].isDisconnected() {
+				ids = append(ids, id)
+			}
 		}
 		return ids
 	}

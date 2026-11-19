@@ -174,6 +174,8 @@ func (t *Tray) refreshItemLocked(profileID string) {
 		title += T("tray.suffix.code")
 	case StatusChoose:
 		title += T("tray.suffix.choose")
+	case StatusReconnecting:
+		title += T("tray.suffix.reconnecting")
 	case StatusDisconnected:
 		// Otherwise a failed attempt looks identical to a profile that was
 		// simply never connected — the tray row was one of the places this

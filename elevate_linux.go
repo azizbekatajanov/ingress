@@ -91,7 +91,7 @@ func elevatedRun(args ...string) (string, error) {
 	if errors.As(err, &exitErr) {
 		switch exitErr.ExitCode() {
 		case 126:
-			err = errors.New(T("elevate.cancelled"))
+			err = &elevateCancelledError{}
 		case 127:
 			err = errors.New(T("elevate.no_rights_pkexec"))
 		}

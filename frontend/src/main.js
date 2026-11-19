@@ -79,7 +79,7 @@ function otpProfile() {
 }
 // Statuses where a connect attempt is in progress (any of them blocks the
 // settings form and shows the "connecting" indicator).
-const PENDING_STATUSES = ['connecting', 'otp', 'choose'];
+const PENDING_STATUSES = ['connecting', 'otp', 'choose', 'reconnecting'];
 function chooseProfile() {
   const sp = selected();
   if (sp && snapshotOf(sp.id).status === 'choose') return sp;
@@ -256,6 +256,7 @@ function render() {
   pill.className = 'pill'; btn.className = 'btn primary';
   if (!sp) { pill.textContent = '—'; }
   else if (snap.status === 'connected') { pill.classList.add('connected'); pill.textContent = t('ui.st.connected'); btn.className = 'btn danger'; btn.textContent = t('ui.disconnect'); btn.onclick = () => disconnect(sp.id); }
+  else if (snap.status === 'reconnecting') { pill.classList.add('pending'); pill.textContent = t('js.st.reconnecting'); btn.className = 'btn neutral'; btn.textContent = t('ui.cancel'); btn.onclick = () => cancelConnect(sp.id); }
   else if (snap.status === 'connecting') { pill.classList.add('pending'); pill.textContent = t('js.st.connecting'); btn.className = 'btn neutral'; btn.textContent = t('js.st.connecting'); btn.onclick = () => cancelConnect(sp.id); }
   else if (snap.status === 'choose') { pill.classList.add('pending'); pill.textContent = t('js.st.choose'); btn.className = 'btn neutral'; btn.textContent = t('js.st.choose'); btn.onclick = () => cancelConnect(sp.id); }
   else if (snap.status === 'otp') { pill.classList.add('pending'); pill.textContent = t('js.st.otp'); btn.className = 'btn neutral'; btn.textContent = t('js.st.otp'); btn.onclick = () => cancelConnect(sp.id); }
@@ -272,7 +273,7 @@ function render() {
   else if (state.showSettings) tabsDef = ['general', 'certificate', 'advanced'];
   // The log of a failed attempt, or of one still in progress (otherwise the
   // spinner hides everything the client prints).
-  const showPastLog = sp && (snap.status === 'disconnected' || snap.status === 'connecting') && state.showLog && !state.showSettings;
+  const showPastLog = sp && ['disconnected', 'connecting', 'reconnecting'].includes(snap.status) && state.showLog && !state.showSettings;
   tabsRow.hidden = tabsDef.length === 0 && !showPastLog;
   backBtn.hidden = !((state.showSettings || showPastLog) && !isConnected);
   if (!tabsDef.includes(state.activeTab)) state.activeTab = tabsDef[0];
@@ -284,7 +285,7 @@ function render() {
 
   // content views
   const showOverview = sp && snap.status === 'disconnected' && !state.showSettings && !showPastLog;
-  const showConnecting = sp && snap.status === 'connecting' && !showPastLog;
+  const showConnecting = sp && (snap.status === 'connecting' || snap.status === 'reconnecting') && !showPastLog;
   $('#viewOverview').hidden = !showOverview;
   $('#viewConnecting').hidden = !showConnecting;
   $('#viewGeneral').hidden = !(sp && !isConnected && state.showSettings && state.activeTab === 'general');
@@ -301,7 +302,21 @@ function render() {
     renderInstallBanner(sp);
     renderErrorBanner(snap);
   }
-  if (showConnecting) $('#connectingTitle').textContent = t('js.connecting_to', state.showHosts ? `${sp.host}:${sp.port}` : sp.name);
+  if (showConnecting) {
+    const target = state.showHosts ? `${sp.host}:${sp.port}` : sp.name;
+    const sub = $('#connectingSub');
+    if (snap.status === 'reconnecting') {
+      $('#connectingTitle').textContent = t('js.reconnect.title', target);
+      sub.textContent = snap.reconnectOffline ? t('js.reconnect.offline')
+        : t('js.reconnect.wait', snap.reconnectSecondsLeft, snap.reconnectAttempt, snap.reconnectMax);
+    } else if (snap.reconnectAttempt > 0) {
+      $('#connectingTitle').textContent = t('js.connecting_to', target);
+      sub.textContent = t('js.reconnect.attempt', snap.reconnectAttempt, snap.reconnectMax);
+    } else {
+      $('#connectingTitle').textContent = t('js.connecting_to', target);
+      sub.textContent = t('ui.connecting_sub');
+    }
+  }
 
   if (sp && !isConnected) fillForm(sp);
   if (isConnected && state.activeTab === 'status') fillStatus(sp, snap);

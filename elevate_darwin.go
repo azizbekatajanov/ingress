@@ -219,7 +219,7 @@ func executeSelfElevated(args []string) (int, *os.File, error) {
 	rc := C.rp_execute(cToolPath, (**C.char)(unsafe.Pointer(&cArgs[0])), &pid, &fd)
 	authMu.Unlock()
 	if rc == errAuthorizationCanceled {
-		return 0, nil, errors.New(T("elevate.cancelled"))
+		return 0, nil, &elevateCancelledError{}
 	}
 	if rc != 0 {
 		return 0, nil, errors.New(T("elevate.failed", int(rc)))
