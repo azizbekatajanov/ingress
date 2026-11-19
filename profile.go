@@ -38,6 +38,9 @@ type Profile struct {
 	// SetLogo — Update ignores the incoming value so a debounced save from a
 	// stale frontend copy can't wipe it.
 	Logo bool `json:"logo"`
+	// ConnectOnLaunch: connect this profile when Ingress starts (see
+	// App.connectOnLaunch). A personal choice, so not exported.
+	ConnectOnLaunch bool `json:"connectOnLaunch"`
 
 	Fortinet      *FortinetSettings      `json:"fortinet,omitempty"`
 	GlobalProtect *GlobalProtectSettings `json:"globalprotect,omitempty"`

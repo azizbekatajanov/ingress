@@ -61,6 +61,40 @@ func (a *App) startup(ctx context.Context) {
 
 	a.updater = NewUpdater(a)
 	go a.updater.run(ctx)
+
+	refreshLaunchAtLogin()
+	go a.connectOnLaunch()
+}
+
+// GetLaunchAtLogin reports whether Ingress starts at login (see autostart.go).
+func (a *App) GetLaunchAtLogin() bool {
+	return launchAtLoginEnabled()
+}
+
+func (a *App) SetLaunchAtLogin(on bool) error {
+	return setLaunchAtLogin(on)
+}
+
+// connectOnLaunchWait bounds how long a connect-on-launch profile waits for
+// its server to resolve: right after login the network is often not up yet.
+const connectOnLaunchWait = 60 * time.Second
+
+// connectOnLaunch connects the profiles marked "connect on launch", one at
+// a time (each may ask for admin rights or a 2FA code).
+func (a *App) connectOnLaunch() {
+	for _, p := range a.store.List() {
+		if !p.ConnectOnLaunch || p.Host == "" {
+			continue
+		}
+		deadline := time.Now().Add(connectOnLaunchWait)
+		for !hostResolves(p.Host) && time.Now().Before(deadline) {
+			time.Sleep(2 * time.Second)
+		}
+		if err := a.manager.Connect(p.ID); err != nil {
+			log.Printf("ingress: connect on launch %s: %v", p.ID, err)
+			a.reportConnectError(p.ID, err)
+		}
+	}
 }
 
 // --- Profiles ---

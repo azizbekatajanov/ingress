@@ -2,6 +2,7 @@ import {
   GetProfiles, GetSelectedProfileID, SelectProfile, AddProfile, UpdateProfile, RemoveProfile,
   GetPassword, SetPassword, GetTheme, SetTheme, GetShowHosts, SetShowHosts,
   ExportProfiles, PickImportFile, ImportProfiles, CancelImport,
+  GetLaunchAtLogin, SetLaunchAtLogin,
   Connect, Disconnect, CancelConnect, SubmitOtp, SubmitPrompt, GetSnapshot,
   GetComponents, InstallComponent, RemoveComponent, SetComponentOverride, BrowseFile,
   PickProfileLogo, RemoveProfileLogo, GetProfileLogos,
@@ -938,9 +939,14 @@ function showAbout() {
     $('#aboutGithub').textContent = state.appInfo.githubUrl;
   }
   $('#aboutOverlay').hidden = false;
+  GetLaunchAtLogin().then(on => { $('#launchAtLogin').checked = !!on; }).catch(() => {});
 }
 $('#aboutTrigger').onclick = showAbout;
 $('#checkUpdatesBtn').onclick = async () => { state.update = await CheckForUpdates(); renderAboutUpdate(); render(); };
+$('#launchAtLogin').onchange = (e) => SetLaunchAtLogin(e.target.checked).catch(err => {
+  e.target.checked = !e.target.checked;
+  alert(errText(err));
+});
 $('#autoUpdateCheck').onchange = (e) => SetUpdateCheck(e.target.checked).catch(err => alert(errText(err)));
 $('#updateLaterBtn').onclick = () => { $('#updateOverlay').hidden = true; };
 $('#updateConfirmBtn').onclick = () => runUpdate(true);

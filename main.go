@@ -95,12 +95,14 @@ func main() {
 	// a fixed 1180x760 CSS panel floating in a resizable canvas doesn't grow
 	// with the window.
 	err = wails.Run(&options.App{
-		Title:            "Ingress",
-		Width:            1180,
-		Height:           760,
-		MinWidth:         900,
-		MinHeight:        600,
-		Frameless:        true,
+		Title:     "Ingress",
+		Width:     1180,
+		Height:    760,
+		MinWidth:  900,
+		MinHeight: 600,
+		Frameless: true,
+		// Launched at login (see autostart.go): tray icon only.
+		StartHidden:      startedHidden(os.Args[1:]),
 		BackgroundColour: &options.RGBA{R: 245, G: 245, B: 247, A: 255},
 		AssetServer: &assetserver.Options{
 			Assets: assets,

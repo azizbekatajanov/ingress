@@ -242,6 +242,13 @@
         </div>
 
         <div class="form" id="viewAdvanced" hidden>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-title" data-i18n="ui.f.connect_on_launch">Подключать при запуске Ingress</div>
+              <div class="toggle-desc" data-i18n="ui.f.connect_on_launch_desc">Вместе с «Запускать при входе в систему» (в «О программе») туннель поднимается сам после входа.</div>
+            </div>
+            <div class="switch" data-switch="connectOnLaunch"><div class="knob"></div></div>
+          </div>
           <div class="field" data-for="sstp">
             <label data-i18n="ui.f.sstp_routes">Route through the tunnel</label>
             <select data-bind="sstp.routeMode">
@@ -367,6 +374,7 @@
           <label for="langSelect" data-i18n="ui.language">Language</label>
           <select id="langSelect"></select>
         </div>
+        <label class="quit-remember"><input type="checkbox" id="launchAtLogin"> <span data-i18n="ui.launch_at_login">Запускать при входе в систему (в трее)</span></label>
         <div class="about-update">
           <div class="otp-sub" id="aboutUpdateLine"></div>
           <div class="about-update-row">
