@@ -1,6 +1,6 @@
 import {
   GetProfiles, GetSelectedProfileID, SelectProfile, AddProfile, UpdateProfile, RemoveProfile,
-  GetPassword, SetPassword, GetTheme, SetTheme,
+  GetPassword, SetPassword, GetTheme, SetTheme, GetShowHosts, SetShowHosts,
   Connect, Disconnect, CancelConnect, SubmitOtp, SubmitPrompt, GetSnapshot,
   GetComponents, InstallComponent, RemoveComponent, SetComponentOverride, BrowseFile,
   PickProfileLogo, RemoveProfileLogo, GetProfileLogos,
@@ -50,6 +50,7 @@ const state = {
   // disconnected — otherwise the log tab only exists while connected.
   showLog: false,
   theme: 'light',
+  showHosts: false, // false = gateway hosts are masked (privacy mode)
   showPassword: false,
   otpCode: '',
   snapshots: {}, // profileId -> ConnectionSnapshot from the Go backend
@@ -111,8 +112,14 @@ function setSetting(p, path, value) {
   keys.slice(0, -1).forEach(k => { if (o[k] == null) o[k] = {}; o = o[k]; });
   o[keys[keys.length - 1]] = value;
 }
+// Gateway hosts are masked unless the user reveals them with the eye in the
+// sidebar heading. The mask has a fixed length so it doesn't leak the host's.
+const HOST_MASK = '••••••';
+const EYE_OPEN = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_CLOSED = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 5.1A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.2 3.1M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M2 2l20 20"/></svg>';
+function hostAddr(p) { return state.showHosts ? `${p.host}:${p.port}` : HOST_MASK; }
 function hostLine(p) {
-  const where = p.host ? `${p.host}:${p.port}` : t('js.not_configured');
+  const where = p.host ? hostAddr(p) : t('js.not_configured');
   return `${TYPE_LABELS[p.type] || ''} · ${where}`;
 }
 
@@ -294,7 +301,7 @@ function render() {
     renderInstallBanner(sp);
     renderErrorBanner(snap);
   }
-  if (showConnecting) $('#connectingTitle').textContent = t('js.connecting_to', `${sp.host}:${sp.port}`);
+  if (showConnecting) $('#connectingTitle').textContent = t('js.connecting_to', state.showHosts ? `${sp.host}:${sp.port}` : sp.name);
 
   if (sp && !isConnected) fillForm(sp);
   if (isConnected && state.activeTab === 'status') fillStatus(sp, snap);
@@ -320,7 +327,8 @@ function render() {
     $('#otpLabel').textContent = !textPrompt ? ''
       : genericLabel ? t('js.otp.generic_hint')
       : t('js.otp.server_asks', otpSnap.promptLabel);
-    $('#otpTarget').textContent = `${otp.username || '—'}@${otp.host || '—'}`;
+    // Not "user@host": people read that as an e-mail address.
+    $('#otpTarget').textContent = otp.username ? t('js.otp.target', otp.name, otp.username) : otp.name;
     const input = $('#otpCode');
     input.maxLength = textPrompt ? 128 : 8;
     input.placeholder = !textPrompt ? '000000' : genericLabel ? t('js.otp.code') : otpSnap.promptLabel;
@@ -338,7 +346,7 @@ function render() {
   if (ch) {
     const chSnap = snapshotOf(ch.id);
     $('#chooseTitle').textContent = chSnap.promptLabel === 'GATEWAY:' ? t('js.choose.gateway') : (/group/i.test(chSnap.promptLabel || '') ? t('js.choose.group') : (chSnap.promptLabel || t('js.choose.option')).replace(/:$/, ''));
-    $('#chooseTarget').textContent = ch.host ? `${ch.name} · ${ch.host}` : ch.name;
+    $('#chooseTarget').textContent = ch.host && state.showHosts ? `${ch.name} · ${ch.host}` : ch.name;
     const box = $('#chooseOptions');
     const key = ch.id + '|' + (chSnap.promptOptions || []).join('|');
     if (box.dataset.key !== key) { // don't rebuild on every 1s tick
@@ -351,6 +359,13 @@ function render() {
       });
     }
   }
+
+  // host privacy eye
+  const eye = $('#hostsToggle');
+  eye.classList.toggle('on', state.showHosts);
+  eye.title = state.showHosts ? t('js.hosts.hide') : t('js.hosts.show');
+  eye.setAttribute('aria-pressed', String(state.showHosts));
+  eye.innerHTML = state.showHosts ? EYE_OPEN : EYE_CLOSED;
 
   // theme switch
   $('#themeToggle').classList.toggle('on', state.theme === 'dark');
@@ -675,7 +690,7 @@ function fillForm(p) {
 function fillStatus(p, snap) {
   $('#statusDuration').textContent = formatDuration(snap.connectSeconds || 0);
   $('#statusIp').textContent = snap.assignedIp || '—';
-  $('#statusGateway').textContent = `${p.host}:${p.port}`;
+  $('#statusGateway').textContent = hostAddr(p);
   $('#statusTx').textContent = formatBytes(snap.txBytes || 0);
   $('#statusRx').textContent = formatBytes(snap.rxBytes || 0);
 }
@@ -702,6 +717,7 @@ profileSelectEl.addEventListener('change', e => {
   render();
 });
 $('#addProfile').onclick = addProfile;
+$('#hostsToggle').onclick = () => { state.showHosts = !state.showHosts; SetShowHosts(state.showHosts).catch(() => {}); render(); };
 $('#themeToggle').onclick = () => { state.theme = state.theme === 'light' ? 'dark' : 'light'; SetTheme(state.theme).catch(() => {}); render(); };
 $('#gearBtn').onclick = () => { state.showSettings = !state.showSettings; render(); };
 $('#backToOverview').onclick = () => { state.showSettings = false; state.showLog = false; render(); };
@@ -890,9 +906,10 @@ EventsOn('profile:failed', (profileId) => {
 
 // ---- startup ----
 async function init() {
-  const [profiles, selectedId, theme, components, appInfo, logos, bundle, update] = await Promise.all([
-    GetProfiles(), GetSelectedProfileID(), GetTheme(), GetComponents(), GetAppInfo(), GetProfileLogos(), GetI18n(), GetUpdateStatus(),
+  const [profiles, selectedId, theme, components, appInfo, logos, bundle, update, showHosts] = await Promise.all([
+    GetProfiles(), GetSelectedProfileID(), GetTheme(), GetComponents(), GetAppInfo(), GetProfileLogos(), GetI18n(), GetUpdateStatus(), GetShowHosts(),
   ]);
+  state.showHosts = !!showHosts;
   state.update = update;
   setI18n(bundle);
   state.logos = logos || {};

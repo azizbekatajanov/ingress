@@ -198,6 +198,9 @@ type profileConfig struct {
 	SelectedProfileID string    `json:"selectedProfileId"`
 	Theme             string    `json:"theme"`
 	SkipQuitConfirm   bool      `json:"skipQuitConfirm"`
+	// ShowHosts reveals gateway hosts in the UI; false (the default) masks
+	// them, so a shared or recorded screen doesn't give them away.
+	ShowHosts bool `json:"showHosts,omitempty"`
 	// Language is the UI language picked in About ("en", "ru", "uz");
 	// empty means follow the system.
 	Language string `json:"language,omitempty"`
@@ -404,6 +407,19 @@ func (s *ProfileStore) SetTheme(theme string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cfg.Theme = theme
+	return s.save()
+}
+
+func (s *ProfileStore) ShowHosts() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cfg.ShowHosts
+}
+
+func (s *ProfileStore) SetShowHosts(show bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg.ShowHosts = show
 	return s.save()
 }
 

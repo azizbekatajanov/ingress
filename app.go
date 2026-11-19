@@ -151,6 +151,15 @@ func (a *App) SetTheme(theme string) error {
 	return a.store.SetTheme(theme)
 }
 
+// GetShowHosts reports whether gateway hosts are shown (false = masked).
+func (a *App) GetShowHosts() bool {
+	return a.store.ShowHosts()
+}
+
+func (a *App) SetShowHosts(show bool) error {
+	return a.store.SetShowHosts(show)
+}
+
 // --- Connections ---
 
 func (a *App) Connect(profileID string) error {
