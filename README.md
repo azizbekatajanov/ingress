@@ -10,7 +10,7 @@ Built with [Wails](https://wails.io) (Go backend, vanilla JS/HTML/CSS frontend).
 - **No Homebrew, no packages to install.** On the first connect of a profile type, Ingress downloads its own pinned build of the VPN client from [ingress-deps](https://github.com/azizbekatajanov/ingress-deps). It verifies the sha256 against a manifest compiled into the app. It installs the client into a root-owned directory (`/Library/Application Support/Ingress` on macOS, `/opt/ingress` on Linux). The directory chain is re-checked before every connect.
   - The openconnect build carries [openconnect!656](https://gitlab.com/openconnect/openconnect/-/merge_requests/656), which GlobalProtect SAML needs on many gateways.
   - openfortivpn is pinned to 1.20.5, because 1.21+ can't bring the tunnel up on macOS Sonoma+ ([#1165](https://github.com/adrienverge/openfortivpn/issues/1165)).
-  - The **Components** screen shows what's installed and can install, update or remove a client. A custom binary path can be set per client. A system binary left over from 1.0.x keeps working until you choose.
+  - The **Components** screen shows what's installed and can install, update or remove a client. A custom binary path can be set per client. Because the client runs as root, a custom or system binary is used only if it and every directory above it are owned by root and not writable by others; a Homebrew install (in a user-owned directory) is refused, and Ingress offers its own build instead.
 - **GlobalProtect**
   - Login with a password, or with **SAML** in Ingress' own login window. In "auto" mode Ingress asks the portal how to log in. The IdP session is remembered between logins.
   - Portal with a **gateway picker**: the choice is remembered. Connecting directly to a gateway is also supported.
@@ -77,7 +77,7 @@ On Linux, elevation is via `pkexec`, which shows your desktop's native polkit au
 ### Upgrading from 1.0.x
 
 - Existing profiles become Fortinet profiles automatically. The original file is kept as `profiles.v1.json` next to `profiles.json`; to downgrade, put it back.
-- If you installed openfortivpn with Homebrew, it keeps working. A banner offers to switch to Ingress' own build or keep using the system one. Homebrew itself is no longer needed.
+- A Homebrew openfortivpn is no longer used: Homebrew's directories belong to your user, so any program running as you could replace the binary and get root on the next connect. A banner offers to install Ingress' own build in one click. A system binary that root owns (e.g. a distribution package in `/usr/sbin`) keeps working. Homebrew itself is no longer needed.
 
 ## Platform support
 

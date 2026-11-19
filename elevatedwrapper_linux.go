@@ -21,6 +21,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -44,6 +45,15 @@ func runPtyExec(args []string) {
 	if len(args) < 1 {
 		os.Exit(64) // EX_USAGE
 	}
+
+	// Checked again here, as root: the path came from the unprivileged app.
+	// Run the resolved path, so nothing can be swapped in between.
+	tool, err := trustedExecPath(args[0])
+	if err != nil {
+		fmt.Println(T("ptyexec.refused", args[0], err))
+		os.Exit(126)
+	}
+	args[0] = tool
 
 	cmd := exec.Command(args[0], args[1:]...)
 	out := newRouteWatcher(os.Stdout, routes)

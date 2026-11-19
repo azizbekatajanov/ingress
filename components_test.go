@@ -152,39 +152,104 @@ func TestVerifyRootOwnedRejectsUserOwned(t *testing.T) {
 	}
 }
 
-func TestResolvePrefersOverrideThenSystem(t *testing.T) {
+func TestTrustedExecPath(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root")
+	}
+	// A real root-owned binary, reached through a symlink in a user-owned
+	// directory: the symlink is resolved, and the resolved path is returned.
+	link := filepath.Join(t.TempDir(), "openconnect")
+	if err := os.Symlink("/usr/bin/true", link); err != nil {
+		t.Fatal(err)
+	}
+	got, err := trustedExecPath(link)
+	if err != nil {
+		t.Fatalf("root-owned target refused: %v", err)
+	}
+	if want, _ := filepath.EvalSymlinks("/usr/bin/true"); got != want {
+		t.Errorf("got %q, want the resolved %q", got, want)
+	}
+
+	// A binary in a user-owned directory (like /opt/homebrew/bin) must be
+	// refused, and so must a root-owned-looking path whose target isn't.
+	bin := filepath.Join(t.TempDir(), "openfortivpn")
+	os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755)
+	if _, err := trustedExecPath(bin); err == nil {
+		t.Error("a user-writable binary must be refused")
+	}
+	link2 := filepath.Join(t.TempDir(), "via-link")
+	os.Symlink(bin, link2)
+	if _, err := trustedExecPath(link2); err == nil {
+		t.Error("a symlink to a user-writable binary must be refused")
+	}
+	if _, err := trustedExecPath(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Error("a missing file must be refused")
+	}
+}
+
+func TestResolveRefusesUntrustedOverrideAndSystem(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root")
+	}
 	t.Setenv("HOME", t.TempDir())
 	store := &ProfileStore{path: filepath.Join(t.TempDir(), "profiles.json")}
 	cm := NewComponentManager(store)
+	trueBin, _ := filepath.EvalSymlinks("/usr/bin/true")
 
-	bin := filepath.Join(t.TempDir(), "openfortivpn")
-	os.WriteFile(bin, []byte("#!/bin/sh\necho 1.20.5\n"), 0o755)
-
-	t.Setenv("PATH", filepath.Dir(bin))
-	path, source, err := cm.resolve("openfortivpn")
-	if _, statErr := os.Lstat(managedBinary("openfortivpn")); statErr == nil {
-		t.Skip("a managed openfortivpn is installed on this machine")
-	}
-	if err != nil || source != "system" || path != bin {
-		t.Fatalf("system fallback: got %q %q %v", path, source, err)
-	}
-
-	override := filepath.Join(t.TempDir(), "my-openfortivpn")
-	os.WriteFile(override, []byte("#!/bin/sh\n"), 0o755)
-	if err := cm.SetOverride("openfortivpn", override); err != nil {
+	// Override: a root-owned binary is accepted and resolved...
+	if err := cm.SetOverride("openfortivpn", "/usr/bin/true"); err != nil {
 		t.Fatal(err)
 	}
-	if path, source, _ := cm.resolve("openfortivpn"); source != "override" || path != override {
-		t.Fatalf("override: got %q %q", path, source)
+	if path, source, err := cm.resolve("openfortivpn"); err != nil || source != "override" || path != trueBin {
+		t.Fatalf("override: got %q %q %v", path, source, err)
 	}
 	if err := cm.SetOverride("openfortivpn", "relative/path"); err == nil {
 		t.Error("relative override must be rejected")
 	}
 
-	t.Setenv("PATH", t.TempDir())
-	cm.SetOverride("openfortivpn", "")
+	// ...a user-writable one is refused when set...
+	userBin := filepath.Join(t.TempDir(), "my-openfortivpn")
+	os.WriteFile(userBin, []byte("#!/bin/sh\n"), 0o755)
+	if err := cm.SetOverride("openfortivpn", userBin); err == nil {
+		t.Error("a user-writable override must be rejected")
+	}
+	// ...and when it's already stored (set by an older version).
+	if err := store.SetComponentOverride("openfortivpn", userBin); err != nil {
+		t.Fatal(err)
+	}
 	if _, _, err := cm.resolve("openfortivpn"); err == nil {
-		t.Error("nothing installed should be an error")
+		t.Error("a stored user-writable override must not resolve")
+	}
+	if st := cm.Status("openfortivpn"); st.OverrideError == "" || st.ActiveSource != "" {
+		t.Errorf("status: overrideError=%q activeSource=%q", st.OverrideError, st.ActiveSource)
+	}
+	store.SetComponentOverride("openfortivpn", "")
+
+	// PATH fallback (tested through systemBinary, since an installed
+	// managed build would shadow it in resolve): a user-writable binary is
+	// found but refused...
+	userDir := filepath.Dir(userBin)
+	os.Rename(userBin, filepath.Join(userDir, "openfortivpn"))
+	t.Setenv("PATH", userDir)
+	if _, found, err := systemBinary("openfortivpn"); !found || err == nil {
+		t.Errorf("user-writable system binary: found=%v err=%v", found, err)
+	}
+	if st := cm.Status("openfortivpn"); st.SystemError == "" || st.SystemPath == "" {
+		t.Errorf("status: systemError=%q systemPath=%q", st.SystemError, st.SystemPath)
+	}
+
+	// ...a root-owned one (via a symlink) is used by its resolved path...
+	linkDir := t.TempDir()
+	os.Symlink("/usr/bin/true", filepath.Join(linkDir, "openfortivpn"))
+	t.Setenv("PATH", linkDir)
+	if path, found, err := systemBinary("openfortivpn"); !found || err != nil || path != trueBin {
+		t.Fatalf("system binary: got %q found=%v err=%v", path, found, err)
+	}
+
+	// ...and none at all is "not found", not an error.
+	t.Setenv("PATH", t.TempDir())
+	if _, found, err := systemBinary("openfortivpn"); found || err != nil {
+		t.Errorf("no system binary: found=%v err=%v", found, err)
 	}
 }
 

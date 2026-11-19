@@ -51,6 +51,15 @@ func runPtyExec(args []string) {
 		os.Exit(64) // EX_USAGE
 	}
 
+	// Checked again here, as root: the path came from the unprivileged app.
+	// Run the resolved path, so nothing can be swapped in between.
+	tool, err := trustedExecPath(args[0])
+	if err != nil {
+		fmt.Println(T("ptyexec.refused", args[0], err))
+		os.Exit(126)
+	}
+	args[0] = tool
+
 	// AuthorizationExecuteWithPrivileges only raises the *effective* UID to 0,
 	// not the real UID (unlike sudo, which sets both) — confirmed live via a
 	// diagnostic print: this process showed euid=0 but uid=501. pppd's own

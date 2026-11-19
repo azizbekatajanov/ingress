@@ -126,6 +126,9 @@ type ComponentStatus struct {
 
 	SystemPath    string `json:"systemPath"`
 	SystemVersion string `json:"systemVersion"`
+	// SystemError: a system binary exists but won't be run as root because
+	// someone other than root can modify it (trustedExecPath).
+	SystemError string `json:"systemError"`
 
 	// ActivePath/ActiveSource: what Connect would run right now.
 	// ActiveSource is "override", "managed", "system", or "" (nothing usable).
@@ -289,16 +292,19 @@ func (cm *ComponentManager) Status(name string) ComponentStatus {
 
 	if o := cm.store.ComponentOverride(name); o != "" {
 		st.Override = o
-		if err := checkExecutable(o); err != nil {
+		if p, err := checkOverride(o); err != nil {
 			st.OverrideError = err.Error()
 		} else {
-			st.OverrideVersion = binaryVersion(o)
+			st.OverrideVersion = binaryVersion(p)
 		}
 	}
 
 	if p, err := exec.LookPath(name); err == nil {
 		st.SystemPath = p
 		st.SystemVersion = binaryVersion(p)
+		if _, err := trustedExecPath(p); err != nil {
+			st.SystemError = err.Error()
+		}
 	}
 
 	if path, source, err := cm.resolve(name); err == nil {
@@ -324,11 +330,15 @@ func (cm *ComponentManager) resolve(name string) (string, string, error) {
 	if _, ok := lookupComponent(name); !ok {
 		return "", "", errors.New(T("comp.err.unknown", name))
 	}
+	// Whatever is returned here runs as root, so override and system
+	// binaries must pass the same root-ownership check as managed ones
+	// (trustedExecPath), and the resolved path is what gets run.
 	if o := cm.store.ComponentOverride(name); o != "" {
-		if err := checkExecutable(o); err != nil {
+		p, err := checkOverride(o)
+		if err != nil {
 			return "", "", errors.New(T("comp.err.override_broken", name, o, err))
 		}
-		return o, "override", nil
+		return p, "override", nil
 	}
 	if _, err := os.Lstat(managedBinary(name)); err == nil {
 		if err := verifyRootOwned(managedChain(name)); err != nil {
@@ -336,10 +346,36 @@ func (cm *ComponentManager) resolve(name string) (string, string, error) {
 		}
 		return managedBinary(name), "managed", nil
 	}
-	if p, err := exec.LookPath(name); err == nil {
+	if p, found, err := systemBinary(name); found {
+		if err != nil {
+			return "", "", err
+		}
 		return p, "system", nil
 	}
 	return "", "", errors.New(T("comp.err.not_installed", name))
+}
+
+// systemBinary looks name up on PATH. found reports whether there is one at
+// all; err, why it can't be run as root. path is the resolved path to run.
+func systemBinary(name string) (path string, found bool, err error) {
+	p, lookErr := exec.LookPath(name)
+	if lookErr != nil {
+		return "", false, nil
+	}
+	real, err := trustedExecPath(p)
+	if err != nil {
+		return "", true, errors.New(T("comp.err.system_untrusted", name, p, err))
+	}
+	return real, true, nil
+}
+
+// checkOverride validates a custom binary path and returns the resolved path
+// to run.
+func checkOverride(path string) (string, error) {
+	if err := checkExecutable(path); err != nil {
+		return "", err
+	}
+	return trustedExecPath(path)
 }
 
 // SetOverride stores (or, with an empty path, clears) a custom binary path.
@@ -349,7 +385,7 @@ func (cm *ComponentManager) SetOverride(name, path string) error {
 	}
 	path = strings.TrimSpace(path)
 	if path != "" {
-		if err := checkExecutable(path); err != nil {
+		if _, err := checkOverride(path); err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
 	}

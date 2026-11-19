@@ -505,15 +505,31 @@ function renderInstallBanner(p) {
 
   let b = null;
   const actions = el('div', 'banner-actions');
-  if (!c.activeSource) {
+  if (!c.activeSource && c.override && c.overrideError) {
+    // A custom path that can't be used (e.g. a Homebrew binary the user can
+    // modify, refused for running as root): offer the built-in build, which
+    // only takes effect once the override is cleared.
+    b = el('div', 'banner error', t('js.comp.override_banner', c.title, c.overrideError));
+    if (c.installed && !c.broken) {
+      actions.appendChild(actionBtn('primary', t('js.comp.use_builtin'), () => setComponentOverride(c.name, '')));
+    } else if (c.available) {
+      actions.appendChild(actionBtn('primary', t('js.comp.install_builtin'), async () => {
+        await setComponentOverride(c.name, '');
+        await runComponentAction(c.name, 'install');
+      }));
+    }
+    actions.appendChild(actionBtn('neutral', t('ui.components'), showComponents));
+  } else if (!c.activeSource) {
     if (c.broken) {
       b = el('div', 'banner error', t('js.comp.broken_banner', c.title, c.broken));
       if (c.available) actions.appendChild(actionBtn('primary', t('js.comp.reinstall'), () => runComponentAction(c.name, 'install')));
     } else if (c.available) {
-      b = el('div', 'banner', t('js.comp.need_banner', c.vpn, c.title, c.latestVersion));
+      const refused = c.systemError ? t('js.comp.system_untrusted', c.title, c.systemPath, c.systemError) + ' ' : '';
+      b = el('div', 'banner', refused + t('js.comp.need_banner', c.vpn, c.title, c.latestVersion));
       actions.appendChild(actionBtn('primary', t('js.comp.install_x', c.title), () => runComponentAction(c.name, 'install')));
     } else {
-      b = el('div', 'banner error', t('js.comp.no_build_banner', c.vpn, c.title));
+      const refused = c.systemError ? ' ' + t('js.comp.system_untrusted', c.title, c.systemPath, c.systemError) : '';
+      b = el('div', 'banner error', t('js.comp.no_build_banner', c.vpn, c.title) + refused);
     }
     if (!c.available || c.broken) actions.appendChild(actionBtn('neutral', t('ui.components'), showComponents));
   } else if (c.activeSource === 'system') {
@@ -581,6 +597,7 @@ function renderComponents() {
     if (c.override && (c.installed || c.available)) row.appendChild(el('div', 'component-line', t('js.comp.override_note')));
     if (c.broken) row.appendChild(el('div', 'component-line error', t('js.comp.integrity_failed', c.broken)));
     if (c.warning) row.appendChild(el('div', 'component-line warning', c.warning));
+    if (c.systemError && !c.activeSource && !c.override) row.appendChild(el('div', 'component-line warning', t('js.comp.system_untrusted', c.title, c.systemPath, c.systemError)));
 
     const pr = state.componentProgress[c.name];
     if (pr) {
